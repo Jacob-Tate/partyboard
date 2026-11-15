@@ -26,9 +26,12 @@ if (GIT_FOUND)
             OUTPUT_VARIABLE PARTY_BOARD_WC_REVISION
             OUTPUT_STRIP_TRAILING_WHITESPACE)
     # defines PARTY_BOARD_WC_DESCRIBE
-    execute_process(WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} COMMAND ${GIT_EXECUTABLE} describe --tags --long --dirty --match "v*"
+    # Upstream tags releases "partyboard_X.Y.Z" (older ones "vX.Y.Z"); both read as vX.Y.Z.
+    execute_process(WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} COMMAND ${GIT_EXECUTABLE} describe --tags --long --dirty
+            --match "v*" --match "partyboard_*"
             OUTPUT_VARIABLE PARTY_BOARD_WC_DESCRIBE
-            OUTPUT_STRIP_TRAILING_WHITESPACE)
+            OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    string(REGEX REPLACE "^partyboard_" "v" PARTY_BOARD_WC_DESCRIBE "${PARTY_BOARD_WC_DESCRIBE}")
 
     # remove the git hash, then collapse a clean "-0" suffix only
     string(REGEX REPLACE "-[^-]+(-dirty|)$" "\\1" PARTY_BOARD_WC_DESCRIBE "${PARTY_BOARD_WC_DESCRIBE}")
