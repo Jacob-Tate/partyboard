@@ -1105,6 +1105,9 @@ EXPORTS
     GetRelIncludeData
     OSGetLanguage
     partyboard_settings_skipBootSequence
+    partyboard_autotest_quickstart
+    partyboard_autotest_setup_party
+    partyboard_autotest_next_game
     partyboard_settings_unlock_bowsers_gnarly_party
     partyboard_version_is_pal
     partyboard_version_is_ntsc

@@ -28,6 +28,7 @@
 #include "port/byteswap.h"
 #include "port/port_version.h"
 #include "port/settings.h"
+#include "port/autotest.h"
 #endif
 
 #define HU_PAD_BTN_ALL (HuPadBtn[0] | HuPadBtn[1] | HuPadBtn[2] | HuPadBtn[3])
@@ -160,6 +161,19 @@ void ObjectSetup(void)
 #endif
 #endif
 #ifdef TARGET_PC
+     // Quickstart: event 0 is the first launch; any other event means a board just finished.
+     if (partyboard_autotest_quickstart()) {
+         static const s32 boardOvlTbl[6] = { DLL_w01dll, DLL_w02dll, DLL_w03dll, DLL_w04dll, DLL_w05dll, DLL_w06dll };
+         if (omovlevtno == 0 || partyboard_autotest_next_game()) {
+             BootInitForSkippedSequence();
+             partyboard_autotest_setup_party();
+             omOvlCallEx(boardOvlTbl[GWSystem.board], 1, 0, 0);
+         }
+         HuPrcEnd();
+         do {
+             HuPrcVSleep();
+         } while (1);
+     }
      if (omovlevtno == 0 && partyboard_settings_skipBootSequence()) {
          for (i = 0; i < 4; i++) {
              GWPlayerCfg[i].pad_idx = i;

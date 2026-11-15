@@ -24,6 +24,7 @@
 #include "port/main.h"
 #include "port/dolassets.h"
 #include "port/ui.h"
+#include "port/autotest.h"
 #include "aurora/dvd.h"
 #include <aurora/aurora.h>
 #include <aurora/event.h>
@@ -120,6 +121,9 @@ void main(void)
         VIWaitForRetrace();
     }
 #ifdef TARGET_PC
+    if (partyboard_autotest_get()->fast) {
+        disableFrameLimiter = TRUE;
+    }
     while (PartyBoard_IsRunning) {
 #else
     while (1) {

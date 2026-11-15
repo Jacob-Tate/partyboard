@@ -21,6 +21,12 @@ static inline u32 frandom(u32 param)
     return param;
 }
 
+#ifdef TARGET_PC
+void frand_seed_set(u32 seed) {
+    frand_seed = seed;
+}
+#endif
+
 u32 frand(void) {
     return frand_seed = frandom(frand_seed);
 }
