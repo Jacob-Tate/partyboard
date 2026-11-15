@@ -70,6 +70,14 @@ UserSettings g_userSettings = {
         .checkForUpdates {"backend.checkForUpdates", true},
         .cardFileType {"backend.cardFileType", static_cast<int>(CARD_RAWIMAGE)},
         .enableAdvancedSettings {"backend.enableAdvancedSettings", false},
+    },
+
+    .netplay = {
+        .server {"netplay.server", ""},
+        .name {"netplay.name", ""},
+        .board {"netplay.board", 0},
+        .turns {"netplay.turns", 10},
+        .inputDelay {"netplay.inputDelay", 4},
     }
 };
 
@@ -122,6 +130,12 @@ void registerSettings() {
     Register(g_userSettings.backend.checkForUpdates);
     Register(g_userSettings.backend.cardFileType);
     Register(g_userSettings.backend.enableAdvancedSettings);
+
+    Register(g_userSettings.netplay.server);
+    Register(g_userSettings.netplay.name);
+    Register(g_userSettings.netplay.board);
+    Register(g_userSettings.netplay.turns);
+    Register(g_userSettings.netplay.inputDelay);
 }
 
 }

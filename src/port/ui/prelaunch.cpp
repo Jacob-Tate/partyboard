@@ -9,6 +9,8 @@
 #include "port/settings.h"
 #include "modal.hpp"
 #include "preset.hpp"
+#include "online.hpp"
+#include "port/netplay.h"
 #include "settings.hpp"
 #include "partyboard_version.h"
 
@@ -644,6 +646,16 @@ Prelaunch::Prelaunch()
         });
         apply_intro_animation(mMenuButtons.back()->root(), "delay-1");
 
+        mMenuButtons.push_back(std::make_unique<Button>(menuList, "Play Online"));
+        mMenuButtons.back()->on_pressed([this] {
+            if (prelaunch_state().activeDiscPath.empty()) {
+                open_iso_picker();
+                return;
+            }
+            push(std::make_unique<OnlineWindow>());
+        });
+        apply_intro_animation(mMenuButtons.back()->root(), "delay-2");
+
         mMenuButtons.push_back(std::make_unique<Button>(menuList, "Settings"));
         mMenuButtons.back()->on_pressed([this] {
             mRestartSuppressed = false;
@@ -745,8 +757,11 @@ void Prelaunch::update()
     const bool activeDiscLoaded = !state.activeDiscPath.empty();
     const bool discRestartPending = activeDiscLoaded && state.configuredDiscPath != state.activeDiscPath;
     mDocument->SetClass("disc-ready", PartyBoard_IsGameLaunched);
-    if (canLaunchConfiguredDisc) {
+    // The game boots when Play is pressed or an online game starts, not as soon as a disc is
+    // configured: online play needs every player's game to boot from the same fresh state.
+    if (canLaunchConfiguredDisc && !PartyBoard_IsGameLaunched && partyboard_netplay_state() == PB_LOBBY_STARTED) {
         PartyBoard_IsGameLaunched = true;
+        hide(true);
     }
 
     if (!mEntranceAnimationStarted && mDocument != nullptr) {

@@ -139,6 +139,8 @@ set(PORT_FILES
         src/port/ui/menu_bar.hpp
         src/port/ui/prelaunch.cpp
         src/port/ui/prelaunch.hpp
+        src/port/ui/online.cpp
+        src/port/ui/online.hpp
         src/port/ui/preset.cpp
         src/port/ui/preset.hpp
         src/port/ui/select_button.cpp

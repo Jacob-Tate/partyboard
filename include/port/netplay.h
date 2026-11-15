@@ -23,6 +23,32 @@
 extern "C" {
 #endif
 
+typedef enum PbNetLobbyState {
+    PB_LOBBY_IDLE,       // not connected
+    PB_LOBBY_CONNECTING, // waiting for the server to answer
+    PB_LOBBY_HELLO,      // connected, waiting to be welcomed
+    PB_LOBBY_JOINING,    // asked to create/join a room
+    PB_LOBBY_IN_ROOM,    // in a room, waiting for the host to start
+    PB_LOBBY_STARTED,    // game settings received; the game should boot now
+    PB_LOBBY_FAILED,     // see partyboard_netplay_error()
+} PbNetLobbyState;
+
+// ---- Lobby (non-blocking; the Online screen calls update() every frame) ----
+// Starts connecting and creating (create=1) or joining a room. Returns 0 on immediate failure.
+int partyboard_netplay_begin(const char *server, const char *name, int create, const char *joinCode);
+void partyboard_netplay_update(void);
+// Host only, while in a room: everyone in the room gets ports in join order; the rest are CPUs.
+// seed 0 picks one at random.
+int partyboard_netplay_start_game(int board, int turns, int inputDelay, int cpuLevel, const int chars[4], u32 seed);
+// Leaves the room and disconnects (not once the game has started).
+void partyboard_netplay_leave(void);
+PbNetLobbyState partyboard_netplay_state(void);
+const char *partyboard_netplay_error(void);
+const char *partyboard_netplay_room_code(void);
+int partyboard_netplay_is_host(void);
+int partyboard_netplay_member_count(void);
+const char *partyboard_netplay_member_name(int index);
+
 // Parses netplay options. Returns 0 on a malformed option.
 int partyboard_netplay_parse(int argc, char *argv[]);
 // True once --server was given.

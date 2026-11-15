@@ -122,6 +122,14 @@ struct UserSettings {
         ConfigVar<int> cardFileType;
         ConfigVar<bool> enableAdvancedSettings;
     } backend;
+
+    struct {
+        ConfigVar<std::string> server; // host[:port] of the relay server
+        ConfigVar<std::string> name;
+        ConfigVar<int> board;          // host's last choices
+        ConfigVar<int> turns;
+        ConfigVar<int> inputDelay;
+    } netplay;
 };
 
 UserSettings& getSettings();

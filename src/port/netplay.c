@@ -4,6 +4,7 @@
 #include "game/gamework_data.h"
 #include "port/autotest.h"
 #include "port/main.h"
+#include "port/ui.h"
 
 #include <enet/enet.h>
 
@@ -43,6 +44,8 @@ static int sPrimed = 0;
 static NetFrame sRing[NET_RING];
 static char sBuildId[PB_NET_MAX_BUILD_ID + 1];
 
+static void parse_server(const char *server);
+
 // ---- options ----
 
 int partyboard_netplay_parse(int argc, char *argv[])
@@ -55,15 +58,7 @@ int partyboard_netplay_parse(int argc, char *argv[])
         const char *arg = argv[i];
         const char *next = (i + 1 < argc) ? argv[i + 1] : NULL;
         if (strcmp(arg, "--server") == 0 && next) {
-            static char host[256];
-            char *colon;
-            snprintf(host, sizeof(host), "%s", next);
-            colon = strrchr(host, ':');
-            if (colon) {
-                *colon = '\0';
-                sServerPort = (u16)atoi(colon + 1);
-            }
-            sServerHost = host;
+            parse_server(next);
             i++;
         } else if (strcmp(arg, "--create") == 0) {
             sCreate = 1;
@@ -150,13 +145,17 @@ static void send_input(u32 frame, const PADStatus *local)
 
 // ---- receiving ----
 
+static u32 sEndedFrames = 0;
+
+// The online game can't continue: tell the player, then quit after ~5 seconds (see pad_read).
 static void end_game(const char *why)
 {
     if (!sEnded) {
         sEnded = 1;
+        sEndedFrames = 0;
         printf("[netplay] %s\n", why);
         fflush(stdout);
-        PartyBoard_IsRunning = false;
+        ui_push_toast("", "Online game over", why, 6000);
     }
 }
 
@@ -186,13 +185,16 @@ static void handle_frame(PbNetReader *r)
 }
 
 // Lobby-phase state, filled by handle_packet.
+static int sConnected = 0;
 static int sWelcomed = 0;
 static int sGameStarted = 0;
 static int sLobbyError = 0;
 static u8 sRoomHost = 0;
 static u8 sRoomCount = 0;
 static u8 sRoomIds[PB_NET_MAX_PLAYERS];
+static char sRoomNames[PB_NET_MAX_PLAYERS][PB_NET_MAX_NAME + 1];
 static char sRoomCode[PB_NET_ROOM_CODE_LEN + 1];
+static char sError[256];
 
 static void handle_packet(const u8 *data, size_t size)
 {
@@ -206,28 +208,34 @@ static void handle_packet(const u8 *data, size_t size)
         sWelcomed = 1;
         break;
     case PB_MSG_ERROR: {
-        char message[256];
+        char message[200];
         const u8 code = pbr_u8(&r);
         pbr_str(&r, message, sizeof(message));
         printf("[netplay] server error %u: %s\n", code, message);
+        fflush(stdout);
+        snprintf(sError, sizeof(sError), "%s", message);
         sLobbyError = 1;
         break;
     }
     case PB_MSG_ROOM_STATE: {
         int i;
+        u8 count;
         pbr_bytes(&r, sRoomCode, PB_NET_ROOM_CODE_LEN);
         sRoomCode[PB_NET_ROOM_CODE_LEN] = '\0';
         sRoomHost = pbr_u8(&r);
-        sRoomCount = pbr_u8(&r);
-        printf("[netplay] room %s, %u player(s):", sRoomCode, sRoomCount);
-        for (i = 0; i < sRoomCount && i < PB_NET_MAX_PLAYERS; i++) {
-            char name[PB_NET_MAX_NAME + 1];
+        count = pbr_u8(&r);
+        if (count > PB_NET_MAX_PLAYERS) {
+            count = PB_NET_MAX_PLAYERS;
+        }
+        printf("[netplay] room %s, %u player(s):", sRoomCode, count);
+        for (i = 0; i < count; i++) {
             sRoomIds[i] = pbr_u8(&r);
-            pbr_str(&r, name, sizeof(name));
-            printf(" %s%s", name, sRoomIds[i] == sRoomHost ? " (host)" : "");
+            pbr_str(&r, sRoomNames[i], sizeof(sRoomNames[i]));
+            printf(" %s%s", sRoomNames[i], sRoomIds[i] == sRoomHost ? " (host)" : "");
         }
         printf("\n");
         fflush(stdout);
+        sRoomCount = count;
         break;
     }
     case PB_MSG_GAME_START:
@@ -267,8 +275,13 @@ static int pump(int timeoutMs)
 {
     ENetEvent event;
     int connected = 1;
+    if (!sHost) {
+        return 0;
+    }
     while (enet_host_service(sHost, &event, (enet_uint32)timeoutMs) > 0) {
-        if (event.type == ENET_EVENT_TYPE_RECEIVE) {
+        if (event.type == ENET_EVENT_TYPE_CONNECT) {
+            sConnected = 1;
+        } else if (event.type == ENET_EVENT_TYPE_RECEIVE) {
             handle_packet(event.packet->data, event.packet->dataLength);
             enet_packet_destroy(event.packet);
         } else if (event.type == ENET_EVENT_TYPE_DISCONNECT) {
@@ -279,114 +292,105 @@ static int pump(int timeoutMs)
     return connected;
 }
 
-// ---- lobby ----
+// ---- lobby state machine (shared by the in-game Online screen and the --server command line) ----
 
-static void start_game_as_host(void)
+static PbNetLobbyState sState = PB_LOBBY_IDLE;
+static int sWantCreate = 0;
+static enet_uint32 sConnectStart = 0;
+static int sEnetReady = 0;
+static char sServerBuf[256];
+
+static void drop_connection(void)
 {
-    const PartyBoardAutotest *t = partyboard_autotest_get();
-    PbNetSettings s;
-    u8 buf[64];
-    PbNetWriter w;
-    int i;
-    memset(&s, 0, sizeof(s));
-    s.seed = t->seedSet ? t->seed : (u32)time(NULL);
-    s.board = (u8)t->board;
-    s.turns = (u8)t->turns;
-    s.cpuLevel = (u8)t->cpuLevel;
-    s.inputDelay = (u8)sDelay;
-    for (i = 0; i < PB_NET_MAX_PLAYERS; i++) {
-        s.chars[i] = (u8)t->chars[i];
-        s.portOwner[i] = i < sRoomCount ? sRoomIds[i] : PB_NET_PORT_CPU;
+    if (sPeer) {
+        enet_peer_disconnect_now(sPeer, 0);
+        sPeer = NULL;
     }
-    pbw_init(&w, buf, sizeof(buf));
-    pbw_u8(&w, PB_MSG_START_GAME);
-    pbw_settings(&w, &s);
-    send_writer(PB_NET_CHANNEL_CONTROL, &w);
+    if (sHost) {
+        enet_host_destroy(sHost);
+        sHost = NULL;
+    }
+    sConnected = sWelcomed = sGameStarted = sLobbyError = 0;
+    sRoomCount = 0;
+    sRoomCode[0] = '\0';
 }
 
-int partyboard_netplay_lobby(void)
+static void fail(const char *why)
+{
+    snprintf(sError, sizeof(sError), "%s", why);
+    printf("[netplay] %s\n", why);
+    fflush(stdout);
+    drop_connection();
+    sState = PB_LOBBY_FAILED;
+}
+
+// Splits "host[:port]" into sServerBuf and sServerPort.
+static void parse_server(const char *server)
+{
+    char *colon;
+    snprintf(sServerBuf, sizeof(sServerBuf), "%s", server);
+    sServerPort = PB_NET_DEFAULT_PORT;
+    colon = strrchr(sServerBuf, ':');
+    if (colon) {
+        *colon = '\0';
+        sServerPort = (u16)atoi(colon + 1);
+    }
+    sServerHost = sServerBuf;
+}
+
+int partyboard_netplay_begin(const char *server, const char *name, int create, const char *joinCode)
 {
     ENetAddress address;
-    ENetEvent event;
-    u8 buf[256];
-    PbNetWriter w;
-    int i;
-    int chars[PB_NET_MAX_PLAYERS];
-
-    if (enet_initialize() != 0) {
-        fprintf(stderr, "[netplay] network init failed\n");
+    int k;
+    partyboard_netplay_leave();
+    sError[0] = '\0';
+    if (!server || !server[0]) {
+        fail("enter the server address first");
         return 0;
+    }
+    if (!create && (!joinCode || strlen(joinCode) != PB_NET_ROOM_CODE_LEN)) {
+        fail("room codes are 4 letters");
+        return 0;
+    }
+    parse_server(server);
+    snprintf(sName, sizeof(sName), "%s", name && name[0] ? name : "Player");
+    sWantCreate = create;
+    memset(sJoinCode, 0, sizeof(sJoinCode));
+    for (k = 0; !create && k < PB_NET_ROOM_CODE_LEN; k++) {
+        const char ch = joinCode[k];
+        sJoinCode[k] = (char)((ch >= 'a' && ch <= 'z') ? ch - 32 : ch);
+    }
+    if (!sEnetReady) {
+        if (enet_initialize() != 0) {
+            fail("network init failed");
+            return 0;
+        }
+        sEnetReady = 1;
     }
     sHost = enet_host_create(NULL, 1, PB_NET_CHANNEL_COUNT, 0, 0);
     if (!sHost || enet_address_set_host(&address, sServerHost) != 0) {
-        fprintf(stderr, "[netplay] can't resolve server '%s'\n", sServerHost);
+        char why[300];
+        snprintf(why, sizeof(why), "can't find server '%s'", sServerHost);
+        fail(why);
         return 0;
     }
     address.port = sServerPort;
     printf("[netplay] connecting to %s:%u as '%s'...\n", sServerHost, sServerPort, sName);
     fflush(stdout);
     sPeer = enet_host_connect(sHost, &address, PB_NET_CHANNEL_COUNT, 0);
-    if (!sPeer || enet_host_service(sHost, &event, 5000) <= 0 || event.type != ENET_EVENT_TYPE_CONNECT) {
-        fprintf(stderr, "[netplay] no answer from %s:%u (is UDP %u open?)\n", sServerHost, sServerPort, sServerPort);
+    if (!sPeer) {
+        fail("couldn't start connecting");
         return 0;
     }
-    enet_peer_timeout(sPeer, 0, 5000, 15000);
+    sConnectStart = enet_time_get();
+    sState = PB_LOBBY_CONNECTING;
+    return 1;
+}
 
-    pbw_init(&w, buf, sizeof(buf));
-    pbw_u8(&w, PB_MSG_HELLO);
-    pbw_u16(&w, PB_NET_PROTOCOL_VERSION);
-    pbw_str(&w, sName, PB_NET_MAX_NAME);
-    pbw_str(&w, sBuildId, PB_NET_MAX_BUILD_ID);
-    pbw_u8(&w, (u8)sizeof(PADStatus));
-    send_writer(PB_NET_CHANNEL_CONTROL, &w);
-    while (!sWelcomed && !sLobbyError) {
-        if (!pump(100)) {
-            fprintf(stderr, "[netplay] disconnected\n");
-            return 0;
-        }
-    }
-    if (sLobbyError) {
-        return 0;
-    }
-
-    pbw_init(&w, buf, sizeof(buf));
-    if (sCreate) {
-        pbw_u8(&w, PB_MSG_CREATE_ROOM);
-    } else {
-        pbw_u8(&w, PB_MSG_JOIN_ROOM);
-        pbw_bytes(&w, sJoinCode, PB_NET_ROOM_CODE_LEN);
-    }
-    send_writer(PB_NET_CHANNEL_CONTROL, &w);
-
-    if (sCreate) {
-        printf("[netplay] creating a room; waiting for %d player(s)...\n", sPlayers);
-    } else {
-        printf("[netplay] joining room %s; waiting for the host to start...\n", sJoinCode);
-    }
-    fflush(stdout);
-    {
-        int startSent = 0;
-        u8 lastCount = 0;
-        while (!sGameStarted) {
-            if (!pump(100) || sLobbyError) {
-                fprintf(stderr, "[netplay] left the lobby\n");
-                return 0;
-            }
-            if (sCreate && sRoomCount != lastCount) {
-                lastCount = sRoomCount;
-                if (sRoomCount == 1) {
-                    printf("[netplay] ROOM CODE: %s  (others run --server %s --join %s)\n", sRoomCode, sServerHost,
-                        sRoomCode);
-                    fflush(stdout);
-                }
-            }
-            if (sCreate && !startSent && sRoomCount >= sPlayers) {
-                start_game_as_host();
-                startSent = 1;
-            }
-        }
-    }
-
+static void finalize_start(void)
+{
+    int i;
+    int chars[PB_NET_MAX_PLAYERS];
     // Game settings from the server: same on every machine.
     sHumanMask = 0;
     sOwnedMask = 0;
@@ -402,9 +406,183 @@ int partyboard_netplay_lobby(void)
     partyboard_autotest_configure_netplay(sSettings.seed, sSettings.board, sSettings.turns, chars, sSettings.cpuLevel,
         sHumanMask);
     sActive = 1;
+    sState = PB_LOBBY_STARTED;
     printf("[netplay] game starting: board %u, %u turns, seed %u, input delay %u, your port(s) 0x%x\n",
         sSettings.board, sSettings.turns, sSettings.seed, sSettings.inputDelay, sOwnedMask);
     fflush(stdout);
+}
+
+static void lobby_update(int timeoutMs)
+{
+    u8 buf[256];
+    PbNetWriter w;
+    if (sState == PB_LOBBY_IDLE || sState == PB_LOBBY_FAILED || sState == PB_LOBBY_STARTED) {
+        return;
+    }
+    if (!pump(timeoutMs)) {
+        fail(sState == PB_LOBBY_CONNECTING ? "no answer from the server" : "disconnected from the server");
+        return;
+    }
+    if (sLobbyError) {
+        char why[256];
+        snprintf(why, sizeof(why), "%s", sError[0] ? sError : "server error");
+        fail(why);
+        return;
+    }
+    switch (sState) {
+    case PB_LOBBY_CONNECTING:
+        if (sConnected) {
+            enet_peer_timeout(sPeer, 0, 5000, 15000);
+            pbw_init(&w, buf, sizeof(buf));
+            pbw_u8(&w, PB_MSG_HELLO);
+            pbw_u16(&w, PB_NET_PROTOCOL_VERSION);
+            pbw_str(&w, sName, PB_NET_MAX_NAME);
+            pbw_str(&w, sBuildId, PB_NET_MAX_BUILD_ID);
+            pbw_u8(&w, (u8)sizeof(PADStatus));
+            send_writer(PB_NET_CHANNEL_CONTROL, &w);
+            sState = PB_LOBBY_HELLO;
+        } else if (enet_time_get() - sConnectStart > 5000) {
+            char why[300];
+            snprintf(why, sizeof(why), "no answer from %s:%u (is UDP port %u open?)", sServerHost, sServerPort,
+                sServerPort);
+            fail(why);
+        }
+        break;
+    case PB_LOBBY_HELLO:
+        if (sWelcomed) {
+            pbw_init(&w, buf, sizeof(buf));
+            if (sWantCreate) {
+                pbw_u8(&w, PB_MSG_CREATE_ROOM);
+            } else {
+                pbw_u8(&w, PB_MSG_JOIN_ROOM);
+                pbw_bytes(&w, sJoinCode, PB_NET_ROOM_CODE_LEN);
+            }
+            send_writer(PB_NET_CHANNEL_CONTROL, &w);
+            sState = PB_LOBBY_JOINING;
+        }
+        break;
+    case PB_LOBBY_JOINING:
+    case PB_LOBBY_IN_ROOM:
+        if (sRoomCount > 0) {
+            sState = PB_LOBBY_IN_ROOM;
+        }
+        if (sGameStarted) {
+            finalize_start();
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+void partyboard_netplay_update(void)
+{
+    lobby_update(0);
+}
+
+int partyboard_netplay_start_game(int board, int turns, int inputDelay, int cpuLevel, const int chars[4], u32 seed)
+{
+    PbNetSettings s;
+    u8 buf[64];
+    PbNetWriter w;
+    int i;
+    if (sState != PB_LOBBY_IN_ROOM || !partyboard_netplay_is_host()) {
+        return 0;
+    }
+    memset(&s, 0, sizeof(s));
+    s.seed = seed ? seed : (u32)time(NULL);
+    s.board = (u8)board;
+    s.turns = (u8)turns;
+    s.cpuLevel = (u8)cpuLevel;
+    s.inputDelay = (u8)inputDelay;
+    // People get ports in join order; the rest are CPU players.
+    for (i = 0; i < PB_NET_MAX_PLAYERS; i++) {
+        s.chars[i] = (u8)chars[i];
+        s.portOwner[i] = i < sRoomCount ? sRoomIds[i] : PB_NET_PORT_CPU;
+    }
+    pbw_init(&w, buf, sizeof(buf));
+    pbw_u8(&w, PB_MSG_START_GAME);
+    pbw_settings(&w, &s);
+    send_writer(PB_NET_CHANNEL_CONTROL, &w);
+    return 1;
+}
+
+void partyboard_netplay_leave(void)
+{
+    if (sState == PB_LOBBY_STARTED) {
+        return; // the game owns the connection now
+    }
+    drop_connection();
+    sState = PB_LOBBY_IDLE;
+}
+
+PbNetLobbyState partyboard_netplay_state(void)
+{
+    return sState;
+}
+
+const char *partyboard_netplay_error(void)
+{
+    return sError;
+}
+
+const char *partyboard_netplay_room_code(void)
+{
+    return sRoomCode;
+}
+
+int partyboard_netplay_is_host(void)
+{
+    return sRoomCount > 0 && sRoomHost == sClientId;
+}
+
+int partyboard_netplay_member_count(void)
+{
+    return sRoomCount;
+}
+
+const char *partyboard_netplay_member_name(int index)
+{
+    return (index >= 0 && index < sRoomCount) ? sRoomNames[index] : "";
+}
+
+// Command-line flow (--server ... --create/--join): console lobby before the window opens.
+int partyboard_netplay_lobby(void)
+{
+    const PartyBoardAutotest *t = partyboard_autotest_get();
+    int startSent = 0;
+    int codeShown = 0;
+    char server[300];
+    char name[PB_NET_MAX_NAME + 1];
+    char code[PB_NET_ROOM_CODE_LEN + 1];
+    // begin() rewrites the server/name/code buffers, so hand it copies.
+    snprintf(server, sizeof(server), "%s:%u", sServerHost, sServerPort);
+    snprintf(name, sizeof(name), "%s", sName);
+    snprintf(code, sizeof(code), "%s", sJoinCode);
+    if (!partyboard_netplay_begin(server, name, sCreate, code)) {
+        return 0;
+    }
+    if (sCreate) {
+        printf("[netplay] creating a room; waiting for %d player(s)...\n", sPlayers);
+    } else {
+        printf("[netplay] joining room %s; waiting for the host to start...\n", sJoinCode);
+    }
+    fflush(stdout);
+    while (sState != PB_LOBBY_STARTED) {
+        lobby_update(50);
+        if (sState == PB_LOBBY_FAILED) {
+            return 0;
+        }
+        if (sCreate && sState == PB_LOBBY_IN_ROOM && !codeShown) {
+            printf("[netplay] ROOM CODE: %s  (others run --server %s --join %s)\n", sRoomCode, sServerHost, sRoomCode);
+            fflush(stdout);
+            codeShown = 1;
+        }
+        if (sCreate && !startSent && sState == PB_LOBBY_IN_ROOM && sRoomCount >= sPlayers) {
+            partyboard_netplay_start_game(t->board, t->turns, sDelay, t->cpuLevel, t->chars, t->seedSet ? t->seed : 0);
+            startSent = 1;
+        }
+    }
     return 1;
 }
 
@@ -436,6 +614,11 @@ static void ensure_local_controllers(void)
                 const char *name = PADGetNameForControllerIndex(index);
                 PADSetPortForIndex(index, slot);
                 printf("[netplay] using '%s' as your controller %u\n", name ? name : "gamepad", slot + 1);
+                {
+                    char msg[128];
+                    snprintf(msg, sizeof(msg), "Using %s as controller %u.", name ? name : "gamepad", slot + 1);
+                    ui_push_toast("controller", "Controller", msg, 4000);
+                }
                 fflush(stdout);
                 break;
             }
@@ -454,6 +637,9 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
         for (port = 0; port < PB_NET_MAX_PLAYERS; port++) {
             memset(&status[port], 0, sizeof(PADStatus));
             status[port].err = PAD_ERR_NO_CONTROLLER;
+        }
+        if (++sEndedFrames == 300) {
+            PartyBoard_IsRunning = false;
         }
         return 0;
     }
@@ -512,6 +698,11 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
                 GWPlayer[port].com = 1;
                 GWPlayer[port].diff = sSettings.cpuLevel;
                 printf("[netplay] frame %u: player %d is now a CPU\n", sFrame, port + 1);
+                {
+                    char msg[64];
+                    snprintf(msg, sizeof(msg), "Player %d disconnected. A CPU takes over.", port + 1);
+                    ui_push_toast("", "Player left", msg, 5000);
+                }
                 fflush(stdout);
             }
         }
@@ -556,7 +747,10 @@ void partyboard_netplay_shutdown(void)
     if (sHost) {
         enet_host_destroy(sHost);
         sHost = NULL;
+    }
+    if (sEnetReady) {
         enet_deinitialize();
+        sEnetReady = 0;
     }
     sActive = 0;
 }
