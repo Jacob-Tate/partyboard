@@ -103,6 +103,7 @@ struct UserSettings {
 
         // Controls
         ConfigVar<bool> enableTurboKeybind;
+        ConfigVar<int> buttonIcons; // PB_ICONS_* (port/button_icons.h)
 
         // Tools
         ConfigVar<bool> speedrunMode;

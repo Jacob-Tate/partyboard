@@ -144,6 +144,8 @@ set(PORT_FILES
         src/port/ui/portraits.cpp
         src/port/ui/portraits.hpp
         src/port/nametag.cpp
+        src/port/button_icons.cpp
+        src/port/button_art.cpp
         src/port/ui/preset.cpp
         src/port/ui/preset.hpp
         src/port/ui/select_button.cpp

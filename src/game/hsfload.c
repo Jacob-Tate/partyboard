@@ -2,6 +2,9 @@
 #include "game/EnvelopeExec.h"
 #include "ctype.h"
 #include "game/hsfformat.h"
+#ifdef TARGET_PC
+#include "port/button_art.h"
+#endif
 #include <string.h>
 
 #ifdef TARGET_PC
@@ -668,6 +671,12 @@ HSFDATA *LoadHSF(void *data)
     ColorLoad();
     PaletteLoad();
     BitmapLoad();
+#ifdef TARGET_PC
+    /* GameCube button textures show the player's controller, pictures only (FIZL0/partyboard N150) */
+    if (head.bitmap.count) {
+        pb_button_art_hsf_bitmaps(Model.bitmap, Model.bitmapNum);
+    }
+#endif
     MaterialLoad();
     AttributeLoad();
     VertexLoad();

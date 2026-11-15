@@ -12,6 +12,9 @@
 #ifdef TARGET_PC
 #include "port/byteswap.h"
 #include <string.h>
+#ifdef TARGET_PC
+#include "port/button_art.h"
+#endif
 #endif
 
 #define SPRITE_DIRTY_ATTR 0x1
@@ -293,6 +296,10 @@ ANIMDATA *HuSprAnimRead(void *data)
         bmp->data = (void *)((uintptr_t)bmp->data+(uintptr_t)data);
     }
     anim->useNum = 0;
+#ifdef TARGET_PC
+    /* Note GameCube button pictures (drawn for the player's controller in HuSprDisp; FIZL0/partyboard N150) */
+    pb_button_art_anim_read(anim);
+#endif
     return anim;
 }
 

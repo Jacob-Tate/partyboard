@@ -8,6 +8,9 @@
 
 #ifdef TARGET_PC
 #include <assert.h>
+#ifdef TARGET_PC
+#include "port/button_art.h"
+#endif
 #endif
 
 static void *bmpNoCC[8];
@@ -54,6 +57,12 @@ void HuSprDisp(HUSPRITE *sprite)
     Mtx modelview, rot;
     short color_sum;
     HUSPRFUNC func;
+#ifdef TARGET_PC
+    /* GameCube button pictures show the seat's controller, pictures only (FIZL0/partyboard N150) */
+    if(!(sprite->attr & HUSPR_ATTR_FUNC)) {
+        anim = pb_button_art_sprite_anim(sprite, anim, &pat);
+    }
+#endif
     
     GXSetScissor(sprite->scissorX, sprite->scissorY, sprite->scissorW, sprite->scissorH);
     if(sprite->attr & HUSPR_ATTR_FUNC) {
