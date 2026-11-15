@@ -11,13 +11,26 @@ anyone drifts out of sync.
 
 ## Run with Docker
 
-From the repository root:
+Every push to the `netplay` branch that passes the integration test publishes
+`ghcr.io/jacob-tate/partyboard-server` (tags: `latest` and the short commit hash).
 
 ```sh
-docker build -f server/Dockerfile -t partyboard-server .
-docker run -d --name partyboard-server --restart unless-stopped -p 7845:7845/udp partyboard-server
+docker run -d --name partyboard-server --restart unless-stopped -p 7845:7845/udp \
+    ghcr.io/jacob-tate/partyboard-server:latest
 docker logs -f partyboard-server
 ```
+
+Update to the newest build:
+
+```sh
+docker pull ghcr.io/jacob-tate/partyboard-server:latest
+docker rm -f partyboard-server
+docker run -d --name partyboard-server --restart unless-stopped -p 7845:7845/udp \
+    ghcr.io/jacob-tate/partyboard-server:latest
+```
+
+To build the image yourself instead, from the repository root:
+`docker build -f server/Dockerfile -t partyboard-server .`
 
 Open **UDP** port 7845 on the host's firewall (and forward it on the router if the host is at home).
 To use another port: `-p 9000:9000/udp -e PB_SERVER_PORT=9000`.

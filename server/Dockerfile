@@ -16,6 +16,10 @@ RUN cmake -S server -B build -DCMAKE_BUILD_TYPE=Release \
     && strip build/partyboard-server build/partyboard-server-test
 
 FROM debian:bookworm-slim
+# Links the ghcr.io package to the repository.
+LABEL org.opencontainers.image.source="https://github.com/Jacob-Tate/partyboard" \
+      org.opencontainers.image.description="Party Board netplay relay server" \
+      org.opencontainers.image.licenses="CC0-1.0"
 RUN useradd --system --no-create-home partyboard
 COPY --from=build /src/build/partyboard-server /usr/local/bin/partyboard-server
 # The integration test client ships too, so a deployment can be checked in place:

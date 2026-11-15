@@ -13,12 +13,21 @@ on:
       - 'include/netplay/**'
   workflow_dispatch:
 
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/partyboard-server
+
 jobs:
   docker:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Image name (GHCR needs lowercase)
+        run: echo "IMAGE=${IMAGE,,}" >> "$GITHUB_ENV"
 
       - name: Build image
         run: docker build -f server/Dockerfile -t partyboard-server .
@@ -39,3 +48,18 @@ jobs:
 
       - name: Image size
         run: docker image ls partyboard-server
+
+      # Publish only tested images from the netplay branch (never from pull requests).
+      - name: Log in to ghcr.io
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/netplay'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Publish to ghcr.io
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/netplay'
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          for tag in latest "$SHORT_SHA"; do
+            docker tag partyboard-server "$IMAGE:$tag"
+            docker push "$IMAGE:$tag"
+          done
+          echo "Published $IMAGE:latest and $IMAGE:$SHORT_SHA" >> "$GITHUB_STEP_SUMMARY"
