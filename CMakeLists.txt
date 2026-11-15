@@ -339,6 +339,19 @@ if (WIN32)
     if (MSVC)
         target_link_options(partyboard PRIVATE /MANIFEST:NO)
     endif ()
+
+    # Single-file launcher for sharing builds: tools/package_friends.py appends the game to it.
+    set(PARTY_BOARD_LAUNCHER_RC ${CMAKE_CURRENT_BINARY_DIR}/partyboard-launcher.rc)
+    configure_file(${PARTY_BOARD_WINDOWS_RESOURCE_DIR}/launcher/launcher.rc.in ${PARTY_BOARD_LAUNCHER_RC} @ONLY)
+    add_executable(partyboard-launcher WIN32
+            ${PARTY_BOARD_WINDOWS_RESOURCE_DIR}/launcher/launcher.cpp
+            ${PARTY_BOARD_WINDOWS_ICON_ICO} ${PARTY_BOARD_LAUNCHER_RC})
+    target_compile_features(partyboard-launcher PRIVATE cxx_std_17)
+    target_link_libraries(partyboard-launcher PRIVATE Cabinet Shell32 Ole32)
+    set_target_properties(partyboard-launcher PROPERTIES MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    if (MSVC)
+        target_link_options(partyboard-launcher PRIVATE /MANIFEST:NO)
+    endif ()
 endif ()
 
 if (APPLE)

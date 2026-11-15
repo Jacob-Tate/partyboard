@@ -118,10 +118,20 @@ extern "C" int partyboard_log_file_start(const char *dirName)
     }
     std::fflush(stdout);
     std::fflush(stderr);
-    gOriginalOut = pb_dup(1);
+    gOriginalOut = _fileno(stdout) >= 0 ? pb_dup(_fileno(stdout)) : -1;
     gPipeRead = fds[0];
     pb_dup2(fds[1], 1);
     pb_dup2(fds[1], 2);
+#ifdef _WIN32
+    // A GUI process starts without descriptors 0-2, so when partyboard_log_console_setup reopened stdout and
+    // stderr (to NUL or the console) they got whatever descriptors were free, often not 1 and 2.
+    if (_fileno(stdout) >= 0 && _fileno(stdout) != 1) {
+        pb_dup2(fds[1], _fileno(stdout));
+    }
+    if (_fileno(stderr) >= 0 && _fileno(stderr) != 2) {
+        pb_dup2(fds[1], _fileno(stderr));
+    }
+#endif
     pb_close(fds[1]);
     // Unbuffered: a crash loses nothing still sitting in a stdio buffer.
     std::setvbuf(stdout, nullptr, _IONBF, 0);
