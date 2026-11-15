@@ -19,6 +19,7 @@ import re
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -197,6 +198,8 @@ def main() -> int:
     p.add_argument("--dump-frame", type=int, default=0, help="hex-dump hashed state at this frame in each log")
     p.add_argument("--hang-seconds", type=float, default=60, help="no new frames for this long = hang")
     p.add_argument("--timeout", type=float, default=1800, help="max seconds per run")
+    p.add_argument("--jobs", type=int, default=max(1, min(6, (os.cpu_count() or 2) // 2)),
+                   help="games to run at once (default: half the CPU cores, at most 6)")
     p.add_argument("--watch", action="store_true", help="run at normal speed (no --fast) so you can watch")
     p.add_argument("--out", type=Path, default=REPO / "build" / "autotest", help="output directory")
     args = p.parse_args()
@@ -220,25 +223,32 @@ def main() -> int:
 
     results: list[RunResult] = []
     desyncs: list[dict] = []
-    for board in args.boards:
-        board_runs = []
-        for run in range(1, args.runs + 1):
-            label = f"board {board} ({BOARD_NAMES[board]}) run {run}/{args.runs}"
-            print(f"  {label} ...", end="", flush=True)
-            r = run_once(args, board, run, out)
-            board_runs.append(r)
+    jobs = [(board, run) for board in args.boards for run in range(1, args.runs + 1)]
+    print(f"Running {len(jobs)} game(s), {args.jobs} at a time")
+    started = time.monotonic()
+    with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        futures = {pool.submit(run_once, args, board, run, out): (board, run) for board, run in jobs}
+        for fut in as_completed(futures):
+            r = fut.result()
             results.append(r)
-            print(f" {r.status}: {r.frames} frames, {r.games_finished} game(s) finished, "
-                  f"last in {ovl_name(r.last_ovl)}, {r.seconds:.0f}s")
+            print(f"  board {r.board} ({BOARD_NAMES[r.board]}) run {r.run}/{args.runs}: {r.status}, "
+                  f"{r.frames} frames, {r.games_finished} game(s) finished, last in {ovl_name(r.last_ovl)}, "
+                  f"{r.seconds:.0f}s", flush=True)
+    print(f"All games done in {time.monotonic() - started:.0f}s")
+    print()
+
+    results.sort(key=lambda r: (r.board, r.run))
+    for board in args.boards:
+        board_runs = [r for r in results if r.board == board]
         for other in board_runs[1:]:
             d = compare(board_runs[0], other)
             if d:
                 d.update(board=board, runs=[board_runs[0].run, other.run])
                 desyncs.append(d)
-                print(f"    DESYNC run 1 vs run {other.run} at frame {d['frame']} "
+                print(f"  board {board}: DESYNC run 1 vs run {other.run} at frame {d['frame']} "
                       f"in {d['overlay_a']}: {', '.join(d['fields'])} differ")
             else:
-                print(f"    run 1 and run {other.run} match")
+                print(f"  board {board}: run 1 and run {other.run} match")
 
     problems = [r for r in results if r.status != "ok"]
     print("\nSummary")

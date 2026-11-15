@@ -19,8 +19,10 @@ param(
     [int]$Turns = 3,
     [int]$Seed = 1234,
     [int]$CpuLevel = 1,
-    [int]$HangSeconds = 60,
-    [int]$TimeoutSeconds = 900
+    # Games to run at once. Lower it on a slow PC.
+    [int]$Jobs = 3,
+    [int]$HangSeconds = 90,
+    [int]$TimeoutSeconds = 1200
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,6 +35,7 @@ $boardNames = @("Toad's Midway Madness", "Goomba's Greedy Gala", "Shy Guy's Jung
 
 if (-not (Test-Path $exe)) { throw "partyboard.exe not found next to this script ($here)" }
 if (-not (Test-Path -LiteralPath $Iso)) { throw "Disc image not found: $Iso" }
+foreach ($b in $Boards) { if ($b -lt 0 -or $b -gt 5) { throw "Board must be 0-5, got $b" } }
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
 function Read-Checksums([string]$path) {
@@ -46,37 +49,57 @@ function Read-Checksums([string]$path) {
     return ,$rows
 }
 
+# Launch games, keeping up to $Jobs running at once.
+$queue = New-Object System.Collections.Queue
+foreach ($b in $Boards) { $queue.Enqueue($b) }
+$running = @{}
+$finished = @{}
+Write-Host ("Playing {0} board(s), {1} at a time. Game windows will open and close." -f $Boards.Count, $Jobs)
+while ($queue.Count -gt 0 -or $running.Count -gt 0) {
+    while ($queue.Count -gt 0 -and $running.Count -lt $Jobs) {
+        $b = $queue.Dequeue()
+        $log = Join-Path $outDir "board$b.checksums"
+        $stdout = Join-Path $outDir "board$b.stdout.txt"
+        $argList = @('--quickstart', '--board', $b, '--turns', $Turns, '--seed', $Seed, '--cpu-level', $CpuLevel,
+                     '--fast', '--iso', "`"$Iso`"", '--checksum-log', "`"$log`"",
+                     '--config-dir', "`"$(Join-Path $outDir "board$b.config")`"")
+        $proc = Start-Process -FilePath $exe -ArgumentList $argList -WorkingDirectory $here -PassThru `
+            -RedirectStandardOutput $stdout -RedirectStandardError "$stdout.err"
+        # Windows PowerShell 5.1 only records ExitCode if the handle is opened while the process runs.
+        $null = $proc.Handle
+        $running[$b] = @{ Proc = $proc; Log = $log; Start = (Get-Date); LastSize = -1; LastGrowth = (Get-Date) }
+        Write-Host ("  started board {0} ({1})" -f $b, $boardNames[$b])
+    }
+    Start-Sleep -Milliseconds 500
+    foreach ($b in @($running.Keys)) {
+        $r = $running[$b]
+        $status = $null
+        if ($r.Proc.HasExited) {
+            $r.Proc.WaitForExit()
+            $status = if ($r.Proc.ExitCode -ne 0) { "crash (exit $($r.Proc.ExitCode))" } else { 'ok' }
+        } else {
+            $size = if (Test-Path $r.Log) { (Get-Item $r.Log).Length } else { 0 }
+            if ($size -ne $r.LastSize) { $r.LastSize = $size; $r.LastGrowth = Get-Date }
+            elseif (((Get-Date) - $r.LastGrowth).TotalSeconds -gt $HangSeconds) { $status = 'hang' }
+            if (((Get-Date) - $r.Start).TotalSeconds -gt $TimeoutSeconds) { $status = 'timeout' }
+            if ($status) { $r.Proc.Kill(); $r.Proc.WaitForExit() }
+        }
+        if ($status) {
+            $secs = [int]((Get-Date) - $r.Start).TotalSeconds
+            $finished[$b] = @{ Status = $status; Secs = $secs }
+            $running.Remove($b)
+            Write-Host ("  finished board {0} ({1}): {2}, {3}s" -f $b, $boardNames[$b], $status, $secs)
+        }
+    }
+}
+
+Write-Host ''
 $summary = @()
 foreach ($b in $Boards) {
     $name = $boardNames[$b]
-    $log = Join-Path $outDir "board$b.checksums"
-    $stdout = Join-Path $outDir "board$b.stdout.txt"
-    Write-Host ("Board {0} ({1}): playing {2} turns..." -f $b, $name, $Turns) -NoNewline
-
-    $argList = @('--quickstart', '--board', $b, '--turns', $Turns, '--seed', $Seed, '--cpu-level', $CpuLevel,
-                 '--fast', '--iso', "`"$Iso`"", '--checksum-log', "`"$log`"",
-                 '--config-dir', "`"$(Join-Path $outDir "board$b.config")`"")
-    $proc = Start-Process -FilePath $exe -ArgumentList $argList -WorkingDirectory $here -PassThru `
-        -RedirectStandardOutput $stdout -RedirectStandardError "$stdout.err"
-    # Windows PowerShell 5.1 only records ExitCode if the handle is opened while the process runs.
-    $null = $proc.Handle
-
-    $start = Get-Date; $lastSize = -1; $lastGrowth = Get-Date; $status = 'ok'
-    while (-not $proc.HasExited) {
-        Start-Sleep -Milliseconds 500
-        $size = if (Test-Path $log) { (Get-Item $log).Length } else { 0 }
-        if ($size -ne $lastSize) { $lastSize = $size; $lastGrowth = Get-Date }
-        elseif (((Get-Date) - $lastGrowth).TotalSeconds -gt $HangSeconds) { $status = 'hang'; break }
-        if (((Get-Date) - $start).TotalSeconds -gt $TimeoutSeconds) { $status = 'timeout'; break }
-    }
-    if (-not $proc.HasExited) { $proc.Kill(); $proc.WaitForExit() }
-    else {
-        $proc.WaitForExit()
-        if ($proc.ExitCode -ne 0) { $status = "crash (exit $($proc.ExitCode))" }
-    }
-    $secs = [int]((Get-Date) - $start).TotalSeconds
-
-    $mine = Read-Checksums $log
+    $status = $finished[$b].Status
+    $secs = $finished[$b].Secs
+    $mine = Read-Checksums (Join-Path $outDir "board$b.checksums")
     $ref = Read-Checksums (Join-Path $refDir "board$b.checksums")
     $result = ''
     if ($ref.Count -eq 0) {
@@ -95,8 +118,9 @@ foreach ($b in $Boards) {
             $result = "MATCH ($($mine.Count) frames)"
         }
     }
-    Write-Host (" {0}, {1}s - {2}" -f $status, $secs, $result)
-    $summary += "board $b ($name): $status, $secs s - $result"
+    $line = "board $b ($name): $status, $secs s - $result"
+    Write-Host $line
+    $summary += $line
 }
 
 $summaryPath = Join-Path $outDir 'summary.txt'

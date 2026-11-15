@@ -16,7 +16,7 @@ Run it
 
        determinism-test.bat "C:\path\to\Mario Party 4 (USA) (Rev 1).rvz"
 
-  3. Leave it alone for about 20-25 minutes. A game window opens and closes six times,
+  3. Leave it alone for about 10 minutes. Three game windows run at a time,
      running faster than normal. Sound may be choppy - that is expected in fast mode.
      Don't drag or close the windows.
 
