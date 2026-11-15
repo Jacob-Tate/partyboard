@@ -171,9 +171,13 @@ static s16 yourTurnSprGrp = -1;
 static UnkUiStatusStruct uiStatus[4] = { 0 };
 
 #ifdef TARGET_PC
-// Online games: status-box member 0x10 shows the player's name where the COM tag goes.
-#define STATUS_NAMETAG 0x10
+// Online games: an extra status-box member (0x11) shows the player's name where the COM tag goes.
+// Member 0x10 is taken: the game puts the auto-play hammer icon there (BoardStatusHammerCreate).
+#define STATUS_NAMETAG 0x11
+#define STATUS_MEMBER_COUNT 0x12
 static s8 statusHasNameTag[4];
+#else
+#define STATUS_MEMBER_COUNT 0x11
 #endif
 
 static s32 statusSprTbl[11] = { DATA_MAKE_NUM(DATADIR_BOARD, 0x27), DATA_MAKE_NUM(DATADIR_BOARD, 0x26), DATA_MAKE_NUM(DATADIR_BOARD, 0x29),
@@ -487,7 +491,7 @@ static void CreateBoardStatusSprite(s32 arg0, UnkUiStatusStruct *arg1)
     s32 i;
 
     temp_r28 = GWPlayerCfg[arg0].character;
-    arg1->unk02 = HuSprGrpCreate(0x11);
+    arg1->unk02 = HuSprGrpCreate(STATUS_MEMBER_COUNT);
     for (i = 0; i < 11; i++) {
         temp_r27 = statusSprTbl[i];
         temp_r26 = statusSprPrioTbl[i];
