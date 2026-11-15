@@ -5,7 +5,9 @@
 #include "port/config.hpp"
 #include "port/netplay.h"
 #include "port/settings.h"
+#include "portraits.hpp"
 #include "string_button.hpp"
+#include "ui.hpp"
 
 #include <array>
 #include <cctype>
@@ -47,6 +49,51 @@ namespace {
             set_text(mGetText());
             ControlledButton::update();
         }
+
+    private:
+        std::function<Rml::String()> mGetText;
+    };
+
+    // A character row: the character's face from the disc (if it could be read), then a live label.
+    class PortraitButton : public ControlledButton {
+    public:
+        PortraitButton(Rml::Element *parent, int character, std::function<Rml::String()> getText,
+            std::function<bool()> isSelected)
+            : ControlledButton(parent, { getText(), std::move(isSelected) })
+            , mCharacter(character)
+            , mGetText(std::move(getText))
+        {
+            mHasPortrait = portraits::ensure_loaded();
+            if (mHasPortrait) {
+                root()->SetClass("portrait-button", true);
+            }
+            refresh();
+        }
+        void update() override
+        {
+            refresh();
+            ControlledButton::update();
+        }
+
+    private:
+        void refresh()
+        {
+            const auto text = mGetText();
+            if (!mHasPortrait) {
+                set_text(text);
+                return;
+            }
+            if (text == mShown) {
+                return;
+            }
+            mShown = text;
+            root()->SetInnerRML("<img src=\"portrait://" + std::to_string(mCharacter) + "\"/><span>" + escape(text) +
+                "</span>");
+        }
+
+        int mCharacter;
+        bool mHasPortrait = false;
+        Rml::String mShown;
 
     private:
         std::function<Rml::String()> mGetText;
@@ -366,7 +413,7 @@ OnlineWindow::OnlineWindow()
                 pane.add_rml("Your character. Nobody can pick one someone else already has; CPUs marked "
                              "<i>auto</i> give theirs up. Remembered for next time.");
                 for (int c = 0; c < kChars; c++) {
-                    pane.add_child<LiveButton>(
+                    pane.add_child<PortraitButton>(c,
                             [c] {
                                 const auto holder = holder_of(c);
                                 return holder.empty() ? char_name(c) : char_name(c) + "  (" + holder + ")";

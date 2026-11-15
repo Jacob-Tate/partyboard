@@ -504,3 +504,19 @@ progress.verification-progress-bar {
     flex: 0 0 auto;
     padding-top: 4dp;
 }
+
+/* Play Online character list: face icon read from the disc, then the name. */
+button.portrait-button {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    text-align: left;
+    padding: 6dp 12dp;
+}
+
+button.portrait-button img {
+    width: 44dp;
+    height: 44dp;
+    flex-shrink: 0;
+    margin-right: 14dp;
+}
