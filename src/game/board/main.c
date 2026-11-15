@@ -440,6 +440,12 @@ static void MainFunc(void)
         if(!_CheckFlag(FLAG_ID_MAKE(0, 8))) {
             BoardLast5Exec();
             _SetFlag(FLAG_ID_MAKE(0, 8));
+#ifdef TARGET_PC
+            // The Last 5 Turns event ends faded out to white. In a game of 5 turns or fewer it runs
+            // right after the board intro, which set fade_enable to skip the first turn's fade-in,
+            // so the screen stayed white for the whole first turn. Fade in like any later turn.
+            fade_enable = 0;
+#endif
         } else {
             BoardLast5GfxInit();
         }
