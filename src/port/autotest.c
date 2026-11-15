@@ -181,6 +181,7 @@ int partyboard_autotest_parse(int argc, char *argv[])
                 fprintf(stderr, "[autotest] --chars expects four ids 0-7 like 0,1,2,3, got '%s'\n", next);
                 ok = 0;
             }
+            sAutotest.charsSet = 1;
             i++;
         } else if (strcmp(arg, "--seed") == 0 && next) {
             char *end;

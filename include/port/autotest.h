@@ -40,6 +40,7 @@ typedef struct PartyBoardAutotest {
     unsigned int dumpFrame;
     const char *isoPath;
     const char *checksumLogPath;
+    int charsSet; // --chars was given
 } PartyBoardAutotest;
 
 // Parses argv; unknown arguments are ignored. Returns 0 on a malformed option.

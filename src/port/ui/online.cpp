@@ -9,7 +9,11 @@
 
 #include <array>
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
+#include <functional>
+#include <string>
+#include <utility>
 
 namespace partyboard::ui {
 namespace {
@@ -23,7 +27,30 @@ namespace {
         "Bowser's Gnarly Party",
     };
 
+    constexpr int kPorts = 4;
+    constexpr int kChars = 8;
+    constexpr uint8_t kCpu = 0xFF;  // PB_NET_PORT_CPU
+    constexpr uint8_t kAuto = 0xFF; // PB_NET_CHAR_AUTO
+
     Rml::String gJoinCode;
+
+    // A right-pane button whose label follows the room state (the pane is only rebuilt on focus).
+    class LiveButton : public ControlledButton {
+    public:
+        LiveButton(Rml::Element *parent, std::function<Rml::String()> getText, std::function<bool()> isSelected)
+            : ControlledButton(parent, { getText(), std::move(isSelected) })
+            , mGetText(std::move(getText))
+        {
+        }
+        void update() override
+        {
+            set_text(mGetText());
+            ControlledButton::update();
+        }
+
+    private:
+        std::function<Rml::String()> mGetText;
+    };
 
     Rml::String default_name()
     {
@@ -43,6 +70,108 @@ namespace {
         return state != PB_LOBBY_IDLE && state != PB_LOBBY_FAILED;
     }
 
+    bool in_room()
+    {
+        return partyboard_netplay_state() == PB_LOBBY_IN_ROOM;
+    }
+
+    bool hosting()
+    {
+        return in_room() && partyboard_netplay_is_host();
+    }
+
+    Rml::String char_name(int character)
+    {
+        return partyboard_netplay_char_name(character);
+    }
+
+    // The character this player has (in a room) or will ask for (before joining); -1 = any.
+    int my_char()
+    {
+        if (in_room()) {
+            return partyboard_netplay_slot_char(partyboard_netplay_my_port());
+        }
+        const int pref = getSettings().netplay.character.getValue();
+        return pref >= 0 && pref < kChars ? pref : -1;
+    }
+
+    // "Alice - Mario", "CPU - Peach (auto)"
+    Rml::String slot_text(int port)
+    {
+        if (!in_room()) {
+            return "-";
+        }
+        Rml::String text = Rml::String(partyboard_netplay_slot_name(port)) + " - " +
+            char_name(partyboard_netplay_slot_char(port));
+        if (partyboard_netplay_slot_auto(port)) {
+            text += " (auto)";
+        }
+        if (port == partyboard_netplay_my_port()) {
+            text += "  (you)";
+        }
+        return text;
+    }
+
+    // Who holds a character in the room, other than this player: "" if nobody.
+    Rml::String holder_of(int character)
+    {
+        if (!in_room()) {
+            return "";
+        }
+        for (int port = 0; port < kPorts; port++) {
+            if (port != partyboard_netplay_my_port() && partyboard_netplay_slot_char(port) == character) {
+                return partyboard_netplay_slot_auto(port) ? "CPU, auto" : partyboard_netplay_slot_name(port);
+            }
+        }
+        return "";
+    }
+
+    Rml::String member_name(int id)
+    {
+        for (int i = 0; i < partyboard_netplay_member_count(); i++) {
+            if (partyboard_netplay_member_id(i) == id) {
+                return partyboard_netplay_member_name(i);
+            }
+        }
+        return "(left)";
+    }
+
+    // The room's layout as SET_LAYOUT expects it (auto CPUs stay auto).
+    void current_layout(uint8_t owner[kPorts], uint8_t chars[kPorts])
+    {
+        for (int port = 0; port < kPorts; port++) {
+            owner[port] = static_cast<uint8_t>(partyboard_netplay_slot_owner(port));
+            chars[port] = partyboard_netplay_slot_auto(port) ? kAuto : static_cast<uint8_t>(partyboard_netplay_slot_char(port));
+        }
+    }
+
+    // Host: put a member on a port, swapping with whoever (person or CPU) is there.
+    void host_seat(int memberId, int port)
+    {
+        uint8_t owner[kPorts], chars[kPorts];
+        current_layout(owner, chars);
+        for (int from = 0; from < kPorts; from++) {
+            if (owner[from] == memberId && from != port) {
+                std::swap(owner[from], owner[port]);
+                std::swap(chars[from], chars[port]);
+                partyboard_netplay_set_layout(owner, chars);
+                return;
+            }
+        }
+    }
+
+    // Host: set a CPU port's character (kAuto = pick automatically).
+    void host_cpu_char(int port, uint8_t character)
+    {
+        uint8_t owner[kPorts], chars[kPorts];
+        current_layout(owner, chars);
+        if (owner[port] != kCpu) {
+            return;
+        }
+        chars[port] = character;
+        partyboard_netplay_set_layout(owner, chars);
+    }
+
     Rml::String status_text()
     {
         switch (partyboard_netplay_state()) {
@@ -54,6 +183,9 @@ namespace {
         case PB_LOBBY_JOINING:
             return "Entering room...";
         case PB_LOBBY_IN_ROOM:
+            if (partyboard_netplay_notice()[0]) {
+                return Rml::String("Can't: ") + partyboard_netplay_notice();
+            }
             return partyboard_netplay_is_host() ? "Hosting - start when ready" : "Waiting for the host to start";
         case PB_LOBBY_STARTED:
             return "Starting!";
@@ -63,25 +195,15 @@ namespace {
         return "";
     }
 
-    Rml::String players_text()
-    {
-        const int count = partyboard_netplay_member_count();
-        if (count == 0) {
-            return "-";
-        }
-        Rml::String text;
-        for (int i = 0; i < count; i++) {
-            if (i) {
-                text += ", ";
-            }
-            text += "P" + std::to_string(i + 1) + " " + partyboard_netplay_member_name(i);
-        }
-        return text;
-    }
-
     void save()
     {
         config::Save();
+    }
+
+    void begin(int create, const char *code)
+    {
+        partyboard_netplay_set_preference(-1, getSettings().netplay.character.getValue());
+        partyboard_netplay_begin(getSettings().netplay.server.getValue().c_str(), player_name().c_str(), create, code);
     }
 
 } // namespace
@@ -180,12 +302,12 @@ OnlineWindow::OnlineWindow()
                                           if (in_lobby()) {
                                               return;
                                           }
-                                          partyboard_netplay_begin(getSettings().netplay.server.getValue().c_str(),
-                                              player_name().c_str(), 1, nullptr);
+                                          begin(1, nullptr);
                                       }),
             rightPane, [](Pane &pane) {
-                pane.add_rml("Create a room and get a 4-letter code to share. You'll be player 1; others "
-                             "become players 2-4 in the order they join, and CPUs fill the rest.");
+                pane.add_rml("Create a room and get a 4-letter code to share. Players take the first free "
+                             "port when they join and can switch to another free one; as host you can "
+                             "rearrange everyone and choose the CPUs' characters under <b>Room</b>.");
             });
 
         // ---- Join ----
@@ -212,8 +334,7 @@ OnlineWindow::OnlineWindow()
                                           if (in_lobby() || gJoinCode.size() != 4) {
                                               return;
                                           }
-                                          partyboard_netplay_begin(getSettings().netplay.server.getValue().c_str(),
-                                              player_name().c_str(), 0, gJoinCode.c_str());
+                                          begin(0, gJoinCode.c_str());
                                       }),
             rightPane, [](Pane &pane) { pane.add_rml("Join the room with the code above."); });
 
@@ -235,11 +356,86 @@ OnlineWindow::OnlineWindow()
                                   }),
             rightPane, [](Pane &pane) { pane.add_rml("Share this code with the other players."); });
         leftPane.register_control(leftPane.add_select_button({
-                                      .key = "Players",
-                                      .getValue = [] { return players_text(); },
-                                      .submit = false,
+                                      .key = "Your Character",
+                                      .getValue = [] {
+                                          const int c = my_char();
+                                          return c >= 0 ? char_name(c) : Rml::String("Any");
+                                      },
                                   }),
-            rightPane, [](Pane &pane) { pane.add_rml("Everyone in the room, in port order."); });
+            rightPane, [](Pane &pane) {
+                pane.add_rml("Your character. Nobody can pick one someone else already has; CPUs marked "
+                             "<i>auto</i> give theirs up. Remembered for next time.");
+                for (int c = 0; c < kChars; c++) {
+                    pane.add_child<LiveButton>(
+                            [c] {
+                                const auto holder = holder_of(c);
+                                return holder.empty() ? char_name(c) : char_name(c) + "  (" + holder + ")";
+                            },
+                            [c] { return my_char() == c; })
+                        .on_pressed([c] {
+                            getSettings().netplay.character.setValue(c);
+                            save();
+                            if (in_room()) {
+                                partyboard_netplay_choose(-1, c);
+                            }
+                        });
+                }
+            });
+        leftPane.register_control(leftPane.add_select_button({
+                                      .key = "Your Port",
+                                      .getValue = [] {
+                                          const int port = partyboard_netplay_my_port();
+                                          return port >= 0 ? "P" + std::to_string(port + 1) : Rml::String("-");
+                                      },
+                                      .isDisabled = [] { return !in_room(); },
+                                  }),
+            rightPane, [](Pane &pane) {
+                pane.add_rml("Your player number. Pick a port a CPU has; the CPU moves to your old one.");
+                for (int port = 0; port < kPorts; port++) {
+                    pane.add_child<LiveButton>(
+                            [port] { return "P" + std::to_string(port + 1) + "  " + slot_text(port); },
+                            [port] { return partyboard_netplay_my_port() == port; })
+                        .on_pressed([port] { partyboard_netplay_choose(port, -1); });
+                }
+            });
+        for (int port = 0; port < kPorts; port++) {
+            leftPane.register_control(leftPane.add_select_button({
+                                          .key = "P" + std::to_string(port + 1),
+                                          .getValue = [port] { return slot_text(port); },
+                                      }),
+                rightPane, [port](Pane &pane) {
+                    if (!hosting()) {
+                        pane.add_rml("Who plays player " + std::to_string(port + 1) +
+                                     ", and as whom. The host can rearrange ports and choose the CPUs' "
+                                     "characters.");
+                        return;
+                    }
+                    pane.add_rml("Host: choose who plays P" + std::to_string(port + 1) +
+                                 " (swaps with their current port). Ports without a person are CPUs.");
+                    const int members = partyboard_netplay_member_count();
+                    for (int i = 0; i < members; i++) {
+                        const int id = partyboard_netplay_member_id(i);
+                        pane.add_child<LiveButton>(
+                                [id] { return Rml::String("Seat ") + member_name(id); },
+                                [id, port] { return partyboard_netplay_slot_owner(port) == id; })
+                            .on_pressed([id, port] { host_seat(id, port); });
+                    }
+                    pane.add_section("CPU character (when a CPU plays this port)");
+                    pane.add_child<LiveButton>([] { return Rml::String("Auto (first free)"); },
+                            [port] {
+                                return partyboard_netplay_slot_owner(port) == kCpu && partyboard_netplay_slot_auto(port);
+                            })
+                        .on_pressed([port] { host_cpu_char(port, kAuto); });
+                    for (int c = 0; c < kChars; c++) {
+                        pane.add_child<LiveButton>([c] { return char_name(c); },
+                                [port, c] {
+                                    return partyboard_netplay_slot_owner(port) == kCpu &&
+                                        !partyboard_netplay_slot_auto(port) && partyboard_netplay_slot_char(port) == c;
+                                })
+                            .on_pressed([port, c] { host_cpu_char(port, static_cast<uint8_t>(c)); });
+                    }
+                });
+        }
         leftPane.register_control(leftPane
                                       .add_select_button({
                                           .key = "Start Game",
@@ -250,13 +446,12 @@ OnlineWindow::OnlineWindow()
                                       })
                                       .on_pressed([] {
                                           const auto &s = getSettings().netplay;
-                                          static const int chars[4] = { 0, 1, 2, 3 };
                                           partyboard_netplay_start_game(s.board.getValue(), s.turns.getValue(),
-                                              s.inputDelay.getValue(), 1, chars, 0);
+                                              s.inputDelay.getValue(), 1, 0);
                                       }),
             rightPane, [](Pane &pane) {
-                pane.add_rml("Host only: start the party for everyone in the room. It boots straight into the "
-                             "board with Mario, Luigi, Peach and Yoshi.");
+                pane.add_rml("Host only: start the party for everyone in the room, with the ports and "
+                             "characters shown above. It boots straight into the board.");
             });
         leftPane.register_control(leftPane
                                       .add_select_button({

@@ -78,6 +78,7 @@ UserSettings g_userSettings = {
         .board {"netplay.board", 0},
         .turns {"netplay.turns", 10},
         .inputDelay {"netplay.inputDelay", 4},
+        .character {"netplay.character", -1},
     }
 };
 
@@ -136,6 +137,7 @@ void registerSettings() {
     Register(g_userSettings.netplay.board);
     Register(g_userSettings.netplay.turns);
     Register(g_userSettings.netplay.inputDelay);
+    Register(g_userSettings.netplay.character);
 }
 
 }

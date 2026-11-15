@@ -11,10 +11,13 @@
 //   --players <2-4>         With --create: how many people to wait for (default 2)
 //   --name <name>           Name shown to the other players (default: your Windows user name)
 //   --delay <frames>        With --create: input delay in frames (default 4)
+//   --char <0-7>            Your character (Mario Luigi Peach Yoshi Wario DK Daisy Waluigi)
+//   --port <1-4>            Your player number, if free
 //
-// The host's --board, --turns, --chars, --cpu-level and --seed choose the game. People join in
-// order and get ports 1, 2, ...; the remaining ports are CPU players. Each person plays with their
-// own controller 1 (and controller 2 if they own a second port).
+// The host's --board, --turns, --cpu-level and --seed choose the game; the host's --chars sets all
+// four characters. Without --port/--char, people get ports 1, 2, ... in join order and the first
+// free characters; the remaining ports are CPU players with the characters nobody took. Each person
+// plays with their own controller 1.
 
 #include <dolphin/pad.h>
 #include <dolphin/types.h>
@@ -37,9 +40,25 @@ typedef enum PbNetLobbyState {
 // Starts connecting and creating (create=1) or joining a room. Returns 0 on immediate failure.
 int partyboard_netplay_begin(const char *server, const char *name, int create, const char *joinCode);
 void partyboard_netplay_update(void);
-// Host only, while in a room: everyone in the room gets ports in join order; the rest are CPUs.
-// seed 0 picks one at random.
-int partyboard_netplay_start_game(int board, int turns, int inputDelay, int cpuLevel, const int chars[4], u32 seed);
+// Host only, while in a room: starts with the room's seating. seed 0 picks one at random.
+int partyboard_netplay_start_game(int board, int turns, int inputDelay, int cpuLevel, u32 seed);
+// Port (0-3) and character (0-7) to ask for on entering a room; -1 = no preference.
+void partyboard_netplay_set_preference(int port, int character);
+// In a room: move to a free port and/or pick a character (-1 keeps the current one). The server
+// may refuse (taken); partyboard_netplay_notice() then says why.
+int partyboard_netplay_choose(int port, int character);
+// Host only, in a room: sets every port's owner (client id or 0xFF = CPU) and character
+// (0-7; 0xFF = CPU picks automatically).
+int partyboard_netplay_set_layout(const u8 owner[4], const u8 chars[4]);
+int partyboard_netplay_client_id(void); // -1 until welcomed
+int partyboard_netplay_member_id(int index);
+int partyboard_netplay_my_port(void);   // -1 when not in a room
+int partyboard_netplay_slot_owner(int port); // client id, or 0xFF for a CPU
+int partyboard_netplay_slot_char(int port);  // 0-7, -1 when not in a room
+int partyboard_netplay_slot_auto(int port);  // 1 for a CPU whose character the server picks
+const char *partyboard_netplay_slot_name(int port); // player name or "CPU"
+const char *partyboard_netplay_notice(void); // last rejected request, "" if none
+const char *partyboard_netplay_char_name(int character);
 // Leaves the room and disconnects (not once the game has started).
 void partyboard_netplay_leave(void);
 PbNetLobbyState partyboard_netplay_state(void);

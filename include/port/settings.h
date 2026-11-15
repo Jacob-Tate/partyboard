@@ -129,6 +129,7 @@ struct UserSettings {
         ConfigVar<int> board;          // host's last choices
         ConfigVar<int> turns;
         ConfigVar<int> inputDelay;
+        ConfigVar<int> character;      // preferred character 0-7, -1 = any
     } netplay;
 };
 
