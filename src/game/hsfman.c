@@ -480,6 +480,12 @@ s16 Hu3DModelLink(s16 arg0) {
     var_r31->hsfLink = temp_r30->hsf;
     var_r31->hsf = HuMemDirectMallocNum(HEAP_DATA, sizeof(HSFDATA), var_r31->mallocNoLink);
     var_r31->mallocNoLink = (uintptr_t)var_r31->hsf;
+#ifdef TARGET_PC
+    /* The block got the slot's old tag: the HSFDATA address of the slot's previous link (0 if none). If another live
+       link's HSFDATA sits at that address now, that link's kill (HuMemDirectFreeNum) freed ours with its own. Tag it
+       with its own address, as its objects are. (FIZL0/partyboard N81) */
+    HuMemMemoryNumSet(var_r31->hsf, var_r31->mallocNoLink);
+#endif
     *var_r31->hsf = *temp_r30->hsf;
     temp_r3_2 = Hu3DObjDuplicate(var_r31->hsf, var_r31->mallocNoLink);
     var_r31->hsf->root = (HSFOBJECT*)((uintptr_t)temp_r3_2 + ((uintptr_t)var_r31->hsf->root - (uintptr_t)var_r31->hsf->object));

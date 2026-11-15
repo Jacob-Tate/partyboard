@@ -107,6 +107,17 @@ static void HuMemTailMemoryAlloc2() // Required for string literal
     OSReport("memory allocation(tail) error.\n");
 }
 
+#ifdef TARGET_PC
+/* Sets a used block's num (Hu3DModelLink tags a link's HSFDATA once its address is known; FIZL0/partyboard N81). */
+void HuMemMemoryNumSet(void *ptr, uintptr_t num)
+{
+    struct memory_block *block = DATA_GET_BLOCK(ptr);
+    if (block->magic == 165) {
+        block->num = num;
+    }
+}
+#endif
+
 void HuMemMemoryFree(void *ptr, uintptr_t retaddr)
 {
 #ifdef SKIP_HU_ALLOC

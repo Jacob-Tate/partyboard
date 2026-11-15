@@ -923,7 +923,10 @@ s16 fn_1_B1E8(Vec *arg0, Vec *arg1, s16 arg2)
     }
     if (temp_r30 == lbl_1_data_3A4[arg2]) {
         arg1->y += 0.3;
-#if VERSION_REV2
+#if VERSION_REV2 && !defined(TARGET_PC)
+        /* Reads the stack, not *arg1. On GC the 12 bytes are arg1 itself (0x80xxxxxx, a float under 1e-37), the volatile
+         * temp of sqrtf(6.0f) above (2.449) and spC: the length is never under 0.000001 and this never runs. On PC they
+         * are a 64-bit pointer and stack garbage, so with ASLR the ball fell twice as fast in some runs (N114). */
         if (VECMag((Vec *)&arg1) < 0.000001) {
             arg1->y += 0.3;
         }

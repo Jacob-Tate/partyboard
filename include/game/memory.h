@@ -23,6 +23,9 @@ void *HuMemDirectMalloc(HeapID heap, size_t size);
 void *HuMemDirectMallocNum(HeapID heap, size_t size, uintptr_t num);
 void HuMemDirectFree(void *ptr);
 void HuMemDirectFreeNum(HeapID heap, uintptr_t num);
+#ifdef TARGET_PC
+void HuMemMemoryNumSet(void *ptr, uintptr_t num);
+#endif
 size_t HuMemUsedMallocSizeGet(HeapID heap);
 size_t HuMemUsedMallocBlockGet(HeapID heap);
 size_t HuMemHeapSizeGet(HeapID heap);

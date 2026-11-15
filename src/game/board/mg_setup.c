@@ -12,6 +12,9 @@
 #include "game/board/ui.h"
 #include "game/board/tutorial.h"
 #include "game/board/window.h"
+#ifdef TARGET_PC
+#include "port/netplay.h"
+#endif
 
 #include "ext_math.h"
 #include <string.h>
@@ -172,7 +175,13 @@ static void ExecMGSetup(void) {
         activeMG[var_r31].unk_00 = -1;
         activeMG[var_r31].unk_04 = 0;
     }
+#ifdef TARGET_PC
+    /* N82: player_curr is -1 here. The GC reads GWPlayer[-1].space_curr, which is GWPlayerCfg[0].diff (the 0x28-byte
+       GWPlayerCfg sits right before GWPlayer); on PC the same address was GWPlayerCfg[2].group */
+    BoardPlayerMoveAwayStartCurr(GWPlayerCfg[0].diff, 1);
+#else
     BoardPlayerMoveAwayStartCurr(GWPlayer[GWSystem.player_curr].space_curr, 1);
+#endif
     BoardCameraMoveSet(0);
     BoardCameraTargetSpaceSet(BoardSpaceStarGetCurr());
     sp54.x = 0.0f;
@@ -950,6 +959,14 @@ static void UpdateLuckyValue(bitcopy* arg0, omObjData* arg1) {
             arg0->unk_04 = 0;
             arg0->unk_02 = 1;
             arg0->unk_03 = 0;
+#ifdef TARGET_PC
+            if (partyboard_netplay_active()) {
+                /* N68: the minigame roulette leaves hilitePos where it stopped, and this roulette starts from it, so
+                 * how long it spins (and the frame the board goes on) differed between a peer that had run a roulette
+                 * before (an earlier match, a reload) and a fresh one. */
+                hilitePos = 0.0f;
+            }
+#endif
             temp_r3 = BoardRandMod(0x64U);
             if (temp_r3 < 0x55) {
 				GWLuckyValueSet(2);

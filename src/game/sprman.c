@@ -466,6 +466,18 @@ void HuSprAnimKill(ANIMDATA *anim)
                 HuMemDirectFree(anim->bmp->palData);
             }
         }
+#ifdef TARGET_PC
+        /* m411's end kills its made anims while their texture anims (Hu3DAnimCreate) still draw with them; omOvlKill's
+           Hu3DAllKill -> Hu3DAnimKill then used and freed each one again ('memory free error', GC too). The bitmap data
+           went above, as on GC; the anim itself is left for its texture anim's kill. (FIZL0/partyboard N75) */
+        if(Hu3DTexAnimUseCheck(anim)) {
+            if(anim->bmpNum & ANIM_BMP_ALLOC) {
+                anim->bmp->data = NULL;
+                anim->bmp->palData = NULL;
+            }
+            return;
+        }
+#endif
 #ifdef OPTIMIZED_TEXTURE_LOADING
         int i;
         int j;
