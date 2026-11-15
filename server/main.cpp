@@ -51,6 +51,7 @@ struct Client {
     std::string build;
     uint8_t padSize = 0;
     Room *room = nullptr;
+    uint32_t lastSentRtt = 0; // the ping the last ROOM_STATE showed
 };
 
 struct PendingFrame {
@@ -76,6 +77,9 @@ struct Room {
     PbNetSettings settings{};
     uint8_t humanMask = 0;
     uint32_t nextFrame = 0;
+    uint32_t lastProgressMs = 0;  // when the last frame went out (or the game started)
+    uint32_t lastWaitingMs = 0;   // when the last WAITING went out
+    uint32_t lastLobbyStateMs = 0; // lobby: when ROOM_STATE (with fresh pings) last went out
     std::map<uint32_t, PendingFrame> frames;
     std::map<uint32_t, std::map<uint8_t, uint32_t>> checksums;
 };
@@ -166,6 +170,7 @@ void seat(Room &room, uint8_t id) {
 }
 
 void sendRoomState(Room &room) {
+    room.lastLobbyStateMs = enet_time_get();
     uint8_t buf[512];
     PbNetWriter w;
     pbw_init(&w, buf, sizeof(buf));
@@ -176,6 +181,9 @@ void sendRoomState(Room &room) {
     for (uint8_t id : room.members) {
         pbw_u8(&w, id);
         pbw_str(&w, gClients.at(id)->name.c_str(), PB_NET_MAX_NAME);
+        Client &member = *gClients.at(id);
+        member.lastSentRtt = member.peer->roundTripTime;
+        pbw_u16(&w, static_cast<uint16_t>(std::min<enet_uint32>(member.lastSentRtt, 65535)));
     }
     const auto chars = resolvedChars(room);
     for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
@@ -281,6 +289,7 @@ void flushFrames(Room &room) {
         }
         broadcast(room, PB_NET_CHANNEL_INPUT, w);
         room.frames.erase(it);
+        room.lastProgressMs = enet_time_get();
         room.nextFrame++;
     }
 }
@@ -297,7 +306,11 @@ void onHello(Client &c, PbNetReader &r) {
         return;
     }
     if (version != PB_NET_PROTOCOL_VERSION) {
-        sendError(c, PB_ERR_VERSION, "protocol version mismatch; update Party Board");
+        char msg[160];
+        std::snprintf(msg, sizeof(msg), "this server speaks protocol %d, your Party Board protocol %u: %s",
+                      PB_NET_PROTOCOL_VERSION, version,
+                      version < PB_NET_PROTOCOL_VERSION ? "get the new Party Board zip" : "the server needs updating (re-pull its image)");
+        sendError(c, PB_ERR_VERSION, msg);
         return;
     }
     c.helloed = true;
@@ -340,7 +353,12 @@ void onJoinRoom(Client &c, PbNetReader &r) {
     if (room.inGame) return sendError(c, PB_ERR_IN_GAME, "that room is already playing");
     if (room.members.size() >= PB_NET_MAX_PLAYERS) return sendError(c, PB_ERR_ROOM_FULL, "room is full");
     if (c.build != room.build || c.padSize != room.padSize) {
-        return sendError(c, PB_ERR_VERSION, "your Party Board build differs from the host's");
+        // Build ids look like "Nov 15 2026 04:20:31/16" (compile time / pad size): show the times.
+        const auto when = [](const std::string &b) { return b.substr(0, b.find('/')); };
+        char msg[200];
+        std::snprintf(msg, sizeof(msg), "your Party Board (built %s) differs from the host's (built %s): everyone needs the same zip",
+                      when(c.build).c_str(), when(room.build).c_str());
+        return sendError(c, PB_ERR_VERSION, msg);
     }
     leaveRoom(c);
     room.members.push_back(c.id);
@@ -389,6 +407,7 @@ void onStartGame(Client &c, PbNetReader &r) {
     room->humanMask = humanMask;
     room->inGame = true;
     room->nextFrame = 0;
+    room->lastProgressMs = enet_time_get();
     room->frames.clear();
     room->checksums.clear();
 
@@ -590,6 +609,40 @@ void onReceive(Client &c, ENetPacket *packet) {
     }
 }
 
+// Called often from the main loop: tells players who a stalled game is waiting for, and refreshes lobby pings.
+void tick() {
+    const uint32_t now = enet_time_get();
+    for (auto &[code, roomPtr] : gRooms) {
+        Room &room = *roomPtr;
+        if (room.inGame) {
+            const uint32_t waited = now - room.lastProgressMs;
+            if (waited >= 500 && now - room.lastWaitingMs >= 500) {
+                const auto it = room.frames.find(room.nextFrame);
+                const uint8_t have = it == room.frames.end() ? 0 : it->second.have;
+                const uint8_t missing = static_cast<uint8_t>(room.humanMask & ~have);
+                uint8_t buf[8];
+                PbNetWriter w;
+                pbw_init(&w, buf, sizeof(buf));
+                pbw_u8(&w, PB_MSG_WAITING);
+                pbw_u8(&w, missing);
+                pbw_u16(&w, static_cast<uint16_t>(std::min<uint32_t>(waited, 65535)));
+                broadcast(room, PB_NET_CHANNEL_CONTROL, w);
+                room.lastWaitingMs = now;
+            }
+        } else if (now - room.lastLobbyStateMs >= 2000) {
+            // Lobby: refresh everyone's ping when one has moved noticeably.
+            bool changed = false;
+            for (uint8_t id : room.members) {
+                const Client &m = *gClients.at(id);
+                const int rtt = static_cast<int>(m.peer->roundTripTime);
+                changed |= std::abs(rtt - static_cast<int>(m.lastSentRtt)) >= 5;
+            }
+            if (changed) sendRoomState(room);
+            else room.lastLobbyStateMs = now;
+        }
+    }
+}
+
 int allocateId() {
     for (int id = 1; id < 255; id++) {
         if (!gClients.count(static_cast<uint8_t>(id))) return id;
@@ -627,7 +680,9 @@ int main(int argc, char **argv) {
 
     for (;;) {
         ENetEvent event;
+        tick();
         while (enet_host_service(host, &event, 50) > 0) {
+            tick();
             switch (event.type) {
             case ENET_EVENT_TYPE_CONNECT: {
                 const int id = allocateId();

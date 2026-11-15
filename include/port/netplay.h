@@ -14,6 +14,8 @@
 //   --char <0-7>            Your character (Mario Luigi Peach Yoshi Wario DK Daisy Waluigi)
 //   --port <1-4>            Your player number, if free
 //   --continue <file>       With --create: continue an online save (<user dir>/online/*.pbsave)
+//   --teams                 With --create: team battle, P1+P2 against P3+P4
+//   --no-bonus-stars        With --create: no bonus stars at the end of the party
 //
 // The host's --board, --turns, --cpu-level and --seed choose the game; the host's --chars sets all
 // four characters. Without --port/--char, people get ports 1, 2, ... in join order and the first
@@ -41,8 +43,15 @@ typedef enum PbNetLobbyState {
 // Starts connecting and creating (create=1) or joining a room. Returns 0 on immediate failure.
 int partyboard_netplay_begin(const char *server, const char *name, int create, const char *joinCode);
 void partyboard_netplay_update(void);
-// Host only, while in a room: starts with the room's seating. seed 0 picks one at random.
-int partyboard_netplay_start_game(int board, int turns, int inputDelay, int cpuLevel, u32 seed);
+// Host only, while in a room: starts with the room's seating. seed 0 picks one at random. teams: team battle
+// (P1+P2 against P3+P4); bonusStars: the end-of-party bonus stars (the game's default is on).
+int partyboard_netplay_start_game(int board, int turns, int inputDelay, int cpuLevel, u32 seed, int teams,
+    int bonusStars);
+// Lobby: a member's / a seat's round trip to the server in ms (-1 if unknown or a CPU), and the input delay
+// those pings suggest (-1 with fewer than two people in the room).
+int partyboard_netplay_member_ping(int index);
+int partyboard_netplay_slot_ping(int port);
+int partyboard_netplay_suggested_delay(void);
 // Port (0-3) and character (0-7) to ask for on entering a room; -1 = no preference.
 void partyboard_netplay_set_preference(int port, int character);
 // In a room: move to a free port and/or pick a character (-1 keeps the current one). The server

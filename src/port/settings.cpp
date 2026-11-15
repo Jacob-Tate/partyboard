@@ -82,6 +82,8 @@ UserSettings g_userSettings = {
         .inputDelay {"netplay.inputDelay", 4},
         .character {"netplay.character", -1},
         .cpuLevel {"netplay.cpuLevel", 1},
+        .teams {"netplay.teams", false},
+        .bonusStars {"netplay.bonusStars", true},
     }
 };
 
@@ -144,6 +146,8 @@ void registerSettings() {
     Register(g_userSettings.netplay.inputDelay);
     Register(g_userSettings.netplay.character);
     Register(g_userSettings.netplay.cpuLevel);
+    Register(g_userSettings.netplay.teams);
+    Register(g_userSettings.netplay.bonusStars);
 }
 
 }

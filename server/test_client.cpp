@@ -99,6 +99,7 @@ struct RoomState {
     uint8_t owner[PB_NET_MAX_PLAYERS] = {};
     uint8_t chr[PB_NET_MAX_PLAYERS] = {};
     uint8_t isAuto[PB_NET_MAX_PLAYERS] = {};
+    uint16_t ping[PB_NET_MAX_PLAYERS] = {};
     bool continuing = false;
     std::string savedName[PB_NET_MAX_PLAYERS];
 };
@@ -116,6 +117,7 @@ RoomState parseRoomState(const std::vector<uint8_t> &msg) {
         char name[PB_NET_MAX_NAME + 1];
         pbr_u8(&r);
         pbr_str(&r, name, sizeof(name));
+        st.ping[i] = pbr_u16(&r);
     }
     for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
         st.owner[port] = pbr_u8(&r);
@@ -430,6 +432,10 @@ int main(int argc, char **argv) {
     sendInput(a, 0, 0xA1);
     a.pump(100);
     CHECK(a.waitFor(PB_MSG_FRAME, 200).empty(), "frame 0 withheld until Bob's input arrives");
+    {
+        auto waiting = a.waitFor(PB_MSG_WAITING, 1500);
+        CHECK(waiting.size() == 4 && waiting[1] == 0x02, "a stalled frame names the missing player's port (Bob, P2)");
+    }
     sendInput(b, 0, 0xB1);
     auto f0 = a.waitFor(PB_MSG_FRAME);
     CHECK(f0.size() == 1 + 4 + 1 + 2 * kPadSize, "frame 0 carries two pads");

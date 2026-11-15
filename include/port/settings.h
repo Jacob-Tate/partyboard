@@ -133,6 +133,8 @@ struct UserSettings {
         ConfigVar<int> inputDelay;
         ConfigVar<int> character;      // preferred character 0-7, -1 = any
         ConfigVar<int> cpuLevel;       // host: CPU difficulty 0-3 (Easy, Normal, Hard, Very Hard)
+        ConfigVar<bool> teams;         // host: team battle (P1+P2 against P3+P4)
+        ConfigVar<bool> bonusStars;    // host: end-of-party bonus stars
     } netplay;
 };
 

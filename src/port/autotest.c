@@ -290,6 +290,15 @@ void partyboard_autotest_yield(void)
 static u8 sContinueState[PB_NET_MAX_CONTINUE_STATE];
 static int sContinueSize = 0;
 
+static int sTeamBattle = 0;
+static int sBonusStars = 1;
+
+void partyboard_autotest_set_party_options(int teams, int bonusStars)
+{
+    sTeamBattle = teams ? 1 : 0;
+    sBonusStars = bonusStars ? 1 : 0;
+}
+
 void partyboard_autotest_set_continue_state(const unsigned char *state, int size)
 {
     sContinueSize = (state && size > 0 && size <= (int)sizeof(sContinueState)) ? size : 0;
@@ -342,12 +351,12 @@ void partyboard_autotest_setup_party(void)
         setup_continue();
         return;
     }
-    BoardPartyConfigSet(0, 1, 0, sAutotest.turns, 0, 0, 0, 0);
+    BoardPartyConfigSet(sTeamBattle, sBonusStars, 0, sAutotest.turns, 0, 0, 0, 0);
     for (i = 0; i < 4; i++) {
         GWPlayerCfg[i].character = sAutotest.chars[i];
         GWPlayerCfg[i].pad_idx = i;
         GWPlayerCfg[i].diff = sAutotest.cpuLevel;
-        GWPlayerCfg[i].group = 0;
+        GWPlayerCfg[i].group = sTeamBattle ? i / 2 : 0; // team battle: P1+P2 against P3+P4
         GWPlayerCfg[i].iscom = (sAutotest.humanMask & (1 << i)) ? 0 : 1;
     }
     if (partyboard_netplay_active()) {

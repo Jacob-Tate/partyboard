@@ -19,7 +19,7 @@
 extern "C" {
 #endif
 
-#define PB_NET_PROTOCOL_VERSION 4
+#define PB_NET_PROTOCOL_VERSION 5
 #define PB_NET_DEFAULT_PORT 7845
 #define PB_NET_CHANNEL_CONTROL 0
 #define PB_NET_CHANNEL_INPUT 1
@@ -69,7 +69,7 @@ typedef enum PbNetMsg {
     // server -> client
     PB_MSG_WELCOME = 64,     // u8 clientId
     PB_MSG_ERROR = 65,       // u8 PbNetError, str message
-    // char code[4], u8 hostId, u8 count, count x (u8 id, str name),
+    // char code[4], u8 hostId, u8 count, count x (u8 id, str name, u16 pingMs: round trip to the server),
     // then 4 slots x (u8 owner, u8 char, u8 isAuto). char is always resolved to 0-7 (an AUTO CPU
     // shows the character it will get); isAuto is 1 for a CPU the server picks for. Then u8 continuing
     // (1 in a continued game's room), and if 1, 4 x str savedName (who played each seat, "" for a CPU).
@@ -81,6 +81,9 @@ typedef enum PbNetMsg {
     // A player disconnected mid-game. Their ports leave the FRAME human mask starting at u32 frame;
     // every client turns those ports into CPU players when it reaches that frame.
     PB_MSG_PLAYER_DROPPED = 71, // u8 clientId, u32 frame
+    // The game is held up: the inputs of these ports (bit per port) haven't arrived for u16 ms. Sent every
+    // half second while a frame waits; the next FRAME means it is moving again.
+    PB_MSG_WAITING = 72,        // u8 missingPorts, u16 waitedMs
 } PbNetMsg;
 
 typedef enum PbNetError {
@@ -108,6 +111,8 @@ typedef struct PbNetSettings {
     uint8_t inputDelay; // frames between reading a pad and that input taking effect
     uint8_t chars[PB_NET_MAX_PLAYERS];     // character ids 0-7, all distinct
     uint8_t portOwner[PB_NET_MAX_PLAYERS]; // client id controlling each port, or PB_NET_PORT_CPU
+    uint8_t teams;      // 1: team battle, P1+P2 against P3+P4
+    uint8_t bonusStars; // 1: bonus stars at the end of the party (the game's default)
 } PbNetSettings;
 
 // ---- Byte buffer helpers (bounds-checked) ----
@@ -157,6 +162,8 @@ static inline void pbw_settings(PbNetWriter *w, const PbNetSettings *s) {
     pbw_u8(w, s->inputDelay);
     pbw_bytes(w, s->chars, PB_NET_MAX_PLAYERS);
     pbw_bytes(w, s->portOwner, PB_NET_MAX_PLAYERS);
+    pbw_u8(w, s->teams);
+    pbw_u8(w, s->bonusStars);
 }
 
 static inline void pbr_init(PbNetReader *r, const uint8_t *data, size_t size) {
@@ -191,6 +198,8 @@ static inline void pbr_settings(PbNetReader *r, PbNetSettings *s) {
     s->inputDelay = pbr_u8(r);
     pbr_bytes(r, s->chars, PB_NET_MAX_PLAYERS);
     pbr_bytes(r, s->portOwner, PB_NET_MAX_PLAYERS);
+    s->teams = pbr_u8(r);
+    s->bonusStars = pbr_u8(r);
 }
 
 // Resolves a slot layout's characters: explicit picks stay, each PB_NET_CHAR_AUTO slot takes the
@@ -215,7 +224,8 @@ static inline void pb_resolve_chars(const uint8_t chosen[PB_NET_MAX_PLAYERS], ui
 // Validates settings the server will hand to every client.
 static inline int pb_settings_valid(const PbNetSettings *s) {
     int i, j;
-    if (s->board > 5 || s->turns < 3 || s->turns > 99 || s->cpuLevel > 3 || s->inputDelay > 30) {
+    if (s->board > 5 || s->turns < 3 || s->turns > 99 || s->cpuLevel > 3 || s->inputDelay > 30 || s->teams > 1 ||
+        s->bonusStars > 1) {
         return 0;
     }
     for (i = 0; i < PB_NET_MAX_PLAYERS; i++) {

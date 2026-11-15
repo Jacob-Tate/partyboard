@@ -10,6 +10,7 @@
 #include "string_button.hpp"
 #include "ui.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cstdint>
@@ -234,6 +235,13 @@ namespace {
             char_name(partyboard_netplay_slot_char(port));
         if (partyboard_netplay_slot_auto(port)) {
             text += " (auto)";
+        }
+        const int ping = partyboard_netplay_slot_ping(port);
+        if (ping >= 0) {
+            text += "  " + std::to_string(ping) + " ms";
+        }
+        if (partyboard_netplay_is_host() && getSettings().netplay.teams.getValue()) {
+            text += port < 2 ? "  [team A]" : "  [team B]";
         }
         const char *saved = partyboard_netplay_saved_name(port);
         if (partyboard_netplay_slot_owner(port) == kCpu && saved[0]) {
@@ -470,7 +478,67 @@ OnlineWindow::OnlineWindow()
             rightPane, [](Pane &pane) {
                 pane.add_rml("Frames between pressing a button and it taking effect, for everyone.<br/><br/>"
                              "4 suits a local network. Raise it if the game stutters over the internet "
-                             "(each frame is about 17 ms).");
+                             "(each frame is about 17 ms).<br/><br/>"
+                             "Once people are in your room, their pings (shown under Room) give a suggestion:");
+                pane.add_child<LiveButton>(
+                        [] {
+                            const int suggested = partyboard_netplay_suggested_delay();
+                            return suggested > 0 ? "Use suggested: " + std::to_string(suggested) + " frames"
+                                                 : Rml::String("Suggestion: needs two people in the room");
+                        },
+                        [] {
+                            const int suggested = partyboard_netplay_suggested_delay();
+                            return suggested > 0 && suggested == getSettings().netplay.inputDelay.getValue();
+                        })
+                    .on_pressed([] {
+                        const int suggested = partyboard_netplay_suggested_delay();
+                        if (suggested > 0) {
+                            getSettings().netplay.inputDelay.setValue(std::min(suggested, 10));
+                            save();
+                        }
+                    });
+            });
+        leftPane.register_control(leftPane.add_select_button({
+                                      .key = "Teams",
+                                      .getValue = [] {
+                                          return Rml::String(getSettings().netplay.teams.getValue() ? "2 vs 2" : "Off");
+                                      },
+                                      .isDisabled = [] { return continuing_save() != nullptr; },
+                                  }),
+            rightPane, [](Pane &pane) {
+                pane.add_rml("Team battle: P1 and P2 against P3 and P4, as the game's own 2 vs 2 party. Arrange "
+                             "the teams by seating people under Room.");
+                for (int on = 0; on < 2; on++) {
+                    pane.add_button({
+                                        .text = on ? "2 vs 2" : "Off",
+                                        .isSelected = [on] { return getSettings().netplay.teams.getValue() == (on != 0); },
+                                    })
+                        .on_pressed([on] {
+                            getSettings().netplay.teams.setValue(on != 0);
+                            save();
+                        });
+                }
+            });
+        leftPane.register_control(leftPane.add_select_button({
+                                      .key = "Bonus Stars",
+                                      .getValue = [] {
+                                          return Rml::String(getSettings().netplay.bonusStars.getValue() ? "On" : "Off");
+                                      },
+                                      .isDisabled = [] { return continuing_save() != nullptr; },
+                                  }),
+            rightPane, [](Pane &pane) {
+                pane.add_rml("The bonus stars handed out at the end of the party (most minigame coins, most coins, "
+                             "most happening spaces).");
+                for (int on = 1; on >= 0; on--) {
+                    pane.add_button({
+                                        .text = on ? "On" : "Off",
+                                        .isSelected = [on] { return getSettings().netplay.bonusStars.getValue() == (on != 0); },
+                                    })
+                        .on_pressed([on] {
+                            getSettings().netplay.bonusStars.setValue(on != 0);
+                            save();
+                        });
+                }
             });
         leftPane.register_control(leftPane.add_select_button({
                                       .key = "CPU Difficulty",
@@ -647,7 +715,7 @@ OnlineWindow::OnlineWindow()
                                       .on_pressed([] {
                                           const auto &s = getSettings().netplay;
                                           partyboard_netplay_start_game(s.board.getValue(), s.turns.getValue(),
-                                              s.inputDelay.getValue(), cpu_level(), 0);
+                                              s.inputDelay.getValue(), cpu_level(), 0, s.teams.getValue() ? 1 : 0, s.bonusStars.getValue() ? 1 : 0);
                                       }),
             rightPane, [](Pane &pane) {
                 pane.add_rml("Host only: start the party for everyone in the room, with the ports and "

@@ -8,6 +8,9 @@
 #include "port/ui.h"
 
 #include <enet/enet.h>
+#include <SDL3/SDL_events.h>
+#include <SDL3/SDL_stdinc.h>
+#include <SDL3/SDL_video.h>
 #include "game/object.h" // after enet.h: it pulls in windows.h, which must not come before winsock2
 
 #include <stdio.h>
@@ -34,6 +37,8 @@ static int sDelay = 4;
 static char sName[PB_NET_MAX_NAME + 1];
 static int sPrefPort = -1; // --port / Online screen: wanted port (0-3) and character (0-7), -1 = any
 static int sPrefChar = -1;
+static int sTeams = 0;      // --teams: team battle (P1+P2 against P3+P4)
+static int sBonusStars = 1; // --no-bonus-stars turns them off
 // Host: the save the next room continues (Online screen or --continue).
 static PbOnlineSave sPendingContinue;
 static int sHasPendingContinue = 0;
@@ -103,6 +108,10 @@ int partyboard_netplay_parse(int argc, char *argv[])
                 ok = 0;
             }
             i++;
+        } else if (strcmp(arg, "--teams") == 0) {
+            sTeams = 1;
+        } else if (strcmp(arg, "--no-bonus-stars") == 0) {
+            sBonusStars = 0;
         } else if (strcmp(arg, "--continue") == 0 && next) {
             // Host: continue the online save in this file (board and turn count come from it).
             if (!partyboard_online_save_load(next, &sPendingContinue) || !sPendingContinue.hasResume) {
@@ -223,6 +232,11 @@ static u8 sRoomHost = 0;
 static u8 sRoomCount = 0;
 static u8 sRoomIds[PB_NET_MAX_PLAYERS];
 static char sRoomNames[PB_NET_MAX_PLAYERS][PB_NET_MAX_NAME + 1];
+static u16 sRoomPings[PB_NET_MAX_PLAYERS]; // each member's round trip to the server (ms)
+// WAITING: the ports whose input a stalled frame lacks, and since when (enet time) we know
+static u8 sWaitingMask = 0;
+static u16 sWaitingMs = 0;
+static int sWaitingShown = 0;
 static char sRoomCode[PB_NET_ROOM_CODE_LEN + 1];
 static u8 sSlotOwner[PB_NET_MAX_PLAYERS];
 static u8 sSlotChar[PB_NET_MAX_PLAYERS];
@@ -280,6 +294,7 @@ static void handle_packet(const u8 *data, size_t size)
         for (i = 0; i < count; i++) {
             sRoomIds[i] = pbr_u8(&r);
             pbr_str(&r, sRoomNames[i], sizeof(sRoomNames[i]));
+            sRoomPings[i] = pbr_u16(&r);
             printf(" %s%s", sRoomNames[i], sRoomIds[i] == sRoomHost ? " (host)" : "");
         }
         printf("\n[netplay]   ");
@@ -326,11 +341,16 @@ static void handle_packet(const u8 *data, size_t size)
         handle_frame(&r);
         break;
     case PB_MSG_DESYNC: {
-        char why[96];
-        snprintf(why, sizeof(why), "DESYNC detected at frame %u - the game has drifted apart", pbr_u32(&r));
+        char why[160];
+        snprintf(why, sizeof(why),
+            "Out of sync at frame %u. The host can continue from the last save: Play Online > Saved Game.", pbr_u32(&r));
         end_game(why);
         break;
     }
+    case PB_MSG_WAITING:
+        sWaitingMask = pbr_u8(&r);
+        sWaitingMs = pbr_u16(&r);
+        break;
     case PB_MSG_PLAYER_DROPPED: {
         const u8 who = pbr_u8(&r);
         const u32 frame = pbr_u32(&r);
@@ -496,6 +516,7 @@ static void finalize_start(void)
         sHumanMask);
     // A continued game boots the board from the saved state instead of a new party (same on every machine).
     partyboard_autotest_set_continue_state(sStartStateSize ? sStartState : NULL, sStartStateSize);
+    partyboard_autotest_set_party_options(sSettings.teams, sSettings.bonusStars);
     if (sStartStateSize) {
         printf("[netplay] continuing a saved game (%u bytes of board state)\n", sStartStateSize);
     }
@@ -587,7 +608,8 @@ void partyboard_netplay_update(void)
     lobby_update(0);
 }
 
-int partyboard_netplay_start_game(int board, int turns, int inputDelay, int cpuLevel, u32 seed)
+int partyboard_netplay_start_game(int board, int turns, int inputDelay, int cpuLevel, u32 seed, int teams,
+    int bonusStars)
 {
     PbNetSettings s;
     u8 buf[64 + PB_NET_MAX_CONTINUE_STATE];
@@ -610,6 +632,8 @@ int partyboard_netplay_start_game(int board, int turns, int inputDelay, int cpuL
     s.turns = (u8)turns;
     s.cpuLevel = (u8)cpuLevel;
     s.inputDelay = (u8)inputDelay;
+    s.teams = teams ? 1 : 0;
+    s.bonusStars = bonusStars ? 1 : 0;
     // Ports and characters come from the room's seating (the server fills them in).
     for (i = 0; i < PB_NET_MAX_PLAYERS; i++) {
         s.chars[i] = sSlotChar[i];
@@ -657,6 +681,44 @@ int partyboard_netplay_set_continue(const PbOnlineSave *save)
 const PbOnlineSave *partyboard_netplay_pending_continue(void)
 {
     return sHasPendingContinue ? &sPendingContinue : NULL;
+}
+
+int partyboard_netplay_member_ping(int index)
+{
+    return (index >= 0 && index < sRoomCount) ? sRoomPings[index] : -1;
+}
+
+int partyboard_netplay_slot_ping(int port)
+{
+    int i;
+    const int owner = partyboard_netplay_slot_owner(port);
+    for (i = 0; owner != PB_NET_PORT_CPU && i < sRoomCount; i++) {
+        if (sRoomIds[i] == owner) {
+            return sRoomPings[i];
+        }
+    }
+    return -1;
+}
+
+int partyboard_netplay_suggested_delay(void)
+{
+    // A frame's inputs travel sender -> server -> receiver: about half the slowest player's round trip plus half
+    // the next slowest one's. In frames of 16.7 ms, rounded up, plus one for jitter.
+    int first = 0, second = 0, i, frames;
+    if (sRoomCount < 2) {
+        return -1;
+    }
+    for (i = 0; i < sRoomCount; i++) {
+        const int ping = sRoomPings[i];
+        if (ping > first) {
+            second = first;
+            first = ping;
+        } else if (ping > second) {
+            second = ping;
+        }
+    }
+    frames = (int)(((first + second) / 2.0 + 16.66) / 16.67) + 1;
+    return frames < 2 ? 2 : (frames > 15 ? 15 : frames);
 }
 
 int partyboard_netplay_room_continuing(void)
@@ -901,7 +963,8 @@ int partyboard_netplay_lobby(void)
                     continue;
                 }
             }
-            partyboard_netplay_start_game(t->board, t->turns, sDelay, t->cpuLevel, t->seedSet ? t->seed : 0);
+            partyboard_netplay_start_game(t->board, t->turns, sDelay, t->cpuLevel, t->seedSet ? t->seed : 0, sTeams,
+                sBonusStars);
             startSent = 1;
         }
     }
@@ -946,6 +1009,61 @@ static void ensure_local_controllers(void)
             }
         }
     }
+}
+
+// While a frame waits on other players: keep the window alive and say who we wait for in its title (the game
+// can't draw while it waits). waitedMs 0 restores the title.
+static void show_waiting(int waitedMs)
+{
+    static char original[256];
+    SDL_Window **windows;
+    int count = 0;
+    char title[256];
+    int port;
+    SDL_PumpEvents();
+    windows = SDL_GetWindows(&count);
+    if (windows == NULL || count < 1) {
+        SDL_free(windows);
+        return;
+    }
+    if (waitedMs == 0) {
+        if (sWaitingShown && original[0]) {
+            SDL_SetWindowTitle(windows[0], original);
+        }
+        if (sWaitingShown) {
+            printf("[netplay] going again at frame %u\n", sFrame);
+            fflush(stdout);
+        }
+        sWaitingShown = 0;
+        sWaitingMask = 0;
+        SDL_free(windows);
+        return;
+    }
+    if (waitedMs < 500) {
+        SDL_free(windows);
+        return;
+    }
+    if (!sWaitingShown) {
+        snprintf(original, sizeof(original), "%s", SDL_GetWindowTitle(windows[0]));
+    }
+    snprintf(title, sizeof(title), "Waiting for");
+    for (port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+        if (sWaitingMask & (1 << port)) {
+            const char *name = sPortNames[port][0] ? sPortNames[port] : "a player";
+            snprintf(title + strlen(title), sizeof(title) - strlen(title), " %s (P%d)", name, port + 1);
+        }
+    }
+    if (sWaitingMask == 0) {
+        snprintf(title + strlen(title), sizeof(title) - strlen(title), " the server");
+    }
+    snprintf(title + strlen(title), sizeof(title) - strlen(title), " - %.1f s", waitedMs / 1000.0);
+    SDL_SetWindowTitle(windows[0], title);
+    if (!sWaitingShown || waitedMs % 2000 == 0) {
+        printf("[netplay] frame %u: %s\n", sFrame, title);
+        fflush(stdout);
+    }
+    sWaitingShown = 1;
+    SDL_free(windows);
 }
 
 u32 partyboard_netplay_pad_read(PADStatus *status)
@@ -1017,6 +1135,9 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
 
     slot = &sRing[sFrame % NET_RING];
     while (!(slot->valid && slot->frame == sFrame)) {
+        if (waited > 0 && waited % 100 == 0) {
+            show_waiting(waited);
+        }
         if (!pump(1)) {
             end_game("lost connection to the server");
             return partyboard_netplay_pad_read(status);
@@ -1028,6 +1149,9 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
             end_game("timed out waiting for the other players");
             return partyboard_netplay_pad_read(status);
         }
+    }
+    if (sWaitingShown) {
+        show_waiting(0);
     }
     if (slot->humanMask != sHumanMask) {
         // A player dropped: every client reaches this frame's bundle with the same mask, so the
