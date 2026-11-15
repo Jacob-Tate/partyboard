@@ -4,6 +4,7 @@
 // Automated test / quick-start mode, driven by command-line options.
 //
 //   --iso <path>          Disc image to boot (skips the prelaunch UI)
+//   --config-dir <path>   Use this folder for settings and memory card (handled in portmain.cpp)
 //   --quickstart          Boot straight into a party-mode board with 4 CPU players
 //   --board <0-5>         Board for --quickstart (default 0 = Toad's Midway Madness)
 //   --turns <n>           Turn count for --quickstart (default 10)

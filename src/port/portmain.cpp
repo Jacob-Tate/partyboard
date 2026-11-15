@@ -386,6 +386,14 @@ extern "C" int port_main(int argc, char* argv[]) {
     partyboard::config::FinishRegistration();
 
     PartyBoard_ConfigPath = calculate_config_path();
+    // --config-dir <path>: use a separate settings/memory-card folder (tests use a fresh one per run).
+    for (int i = 1; i + 1 < argc; i++) {
+        if (strcmp(argv[i], "--config-dir") == 0) {
+            std::error_code ec;
+            PartyBoard_ConfigPath = std::filesystem::u8path(argv[i + 1]);
+            std::filesystem::create_directories(PartyBoard_ConfigPath, ec);
+        }
+    }
 
     partyboard::config::LoadFromUserPreferences();
     if (!partyboard_autotest_parse(argc, argv)) {

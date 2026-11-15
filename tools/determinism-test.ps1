@@ -54,7 +54,8 @@ foreach ($b in $Boards) {
     Write-Host ("Board {0} ({1}): playing {2} turns..." -f $b, $name, $Turns) -NoNewline
 
     $argList = @('--quickstart', '--board', $b, '--turns', $Turns, '--seed', $Seed, '--cpu-level', $CpuLevel,
-                 '--fast', '--iso', "`"$Iso`"", '--checksum-log', "`"$log`"")
+                 '--fast', '--iso', "`"$Iso`"", '--checksum-log', "`"$log`"",
+                 '--config-dir', "`"$(Join-Path $outDir "board$b.config")`"")
     $proc = Start-Process -FilePath $exe -ArgumentList $argList -WorkingDirectory $here -PassThru `
         -RedirectStandardOutput $stdout -RedirectStandardError "$stdout.err"
     # Windows PowerShell 5.1 only records ExitCode if the handle is opened while the process runs.

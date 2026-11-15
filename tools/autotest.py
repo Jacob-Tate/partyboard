@@ -116,9 +116,10 @@ def run_once(args, board: int, run: int, out: Path) -> RunResult:
         "--seed", str(args.seed),
         "--cpu-level", str(args.cpu_level),
         "--checksum-log", str(res.log),
+        # Fresh settings/memory-card folder per run, so a local save can't change the game.
+        "--config-dir", str(out / f"board{board}_run{run}.config"),
+        "--iso", str(args.iso),
     ]
-    if args.iso:
-        cmd += ["--iso", str(args.iso)]
     if not args.watch:
         cmd.append("--fast")
     if args.max_frames:
@@ -186,7 +187,7 @@ def compare(a: RunResult, b: RunResult) -> dict | None:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--exe", type=Path, required=True, help="path to partyboard.exe")
-    p.add_argument("--iso", type=Path, help="disc image (default: the one saved in the game's config)")
+    p.add_argument("--iso", type=Path, help="disc image (default: the one saved in the game's normal config)")
     p.add_argument("--boards", type=int, nargs="+", default=list(range(6)), help="boards 0-5 (default all)")
     p.add_argument("--turns", type=int, default=5)
     p.add_argument("--runs", type=int, default=2, help="runs per board to compare (default 2)")
@@ -201,6 +202,14 @@ def main() -> int:
     args = p.parse_args()
 
     args.exe = args.exe.resolve()
+    if args.iso is None:
+        # Fall back to the disc image saved in the game's normal config.
+        cfg = Path(os.environ.get("APPDATA", "")) / "MarioPartyRD" / "Party Board" / "config.json"
+        try:
+            args.iso = Path(json.loads(cfg.read_text())["backend.isoPath"])
+        except (OSError, KeyError, ValueError):
+            print("No --iso given and no disc image saved in the game's config", file=sys.stderr)
+            return 2
     if not args.exe.exists():
         print(f"exe not found: {args.exe}", file=sys.stderr)
         return 2

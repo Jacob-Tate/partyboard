@@ -4,6 +4,7 @@
 #include "game/chrman.h"
 #include "game/gamework_data.h"
 #include "game/object.h"
+#include "game/saveload.h"
 #include "port/main.h"
 
 #include <SDL3/SDL_timer.h>
@@ -245,6 +246,9 @@ void partyboard_autotest_setup_party(void)
     GWMessSpeedSet(0);
     GWMGExplainSet(0);
     GWMGShowComSet(1);
+    // Never touch the memory card: whether a save file exists changes how many frames the
+    // results screen takes (save path vs. plain fade), which desyncs PCs with different saves.
+    SLSaveFlagSet(0);
     BoardSaveInit(sAutotest.board);
     for (i = 0; i < 4; i++) {
         CharMotionInit(GWPlayerCfg[i].character);
