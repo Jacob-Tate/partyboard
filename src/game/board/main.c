@@ -31,6 +31,9 @@
 #include "game/board/roll.h"
 #include "game/board/window.h"
 #include "game/chrman.h"
+#ifdef TARGET_PC
+#include "port/autotest.h"
+#endif
 
 extern void BoardLast5Exec(void);
 
@@ -1428,6 +1431,13 @@ float BoardArcCos(float value)
 
 void BoardRandInit(void)
 {
+#ifdef TARGET_PC
+    // With --seed, derive the board RNG from the shared seed instead of the clock.
+    if (partyboard_autotest_seeded()) {
+        boardRandSeed = partyboard_autotest_frame_seed();
+        return;
+    }
+#endif
     boardRandSeed = OSGetTime();
 }
 

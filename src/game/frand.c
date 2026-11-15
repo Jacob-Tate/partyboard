@@ -25,6 +25,10 @@ static inline u32 frandom(u32 param)
 void frand_seed_set(u32 seed) {
     frand_seed = seed;
 }
+
+u32 frand_seed_get(void) {
+    return frand_seed;
+}
 #endif
 
 u32 frand(void) {

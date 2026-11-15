@@ -3,6 +3,7 @@
 #include "game/board/main.h"
 #include "game/chrman.h"
 #include "game/gamework_data.h"
+#include "game/object.h"
 #include "port/main.h"
 
 #include <stdio.h>
@@ -23,8 +24,40 @@ static PartyBoardAutotest sAutotest = {
     0,              // fast
     0,              // loop
     0,              // gamesFinished
+    0,              // maxFrames
+    0,              // dumpFrame
     NULL,           // isoPath
+    NULL,           // checksumLogPath
 };
+
+static FILE *sChecksumLog = NULL;
+static OMOVL sLastOvl = -1;
+
+extern u32 GlobalCounter;
+u32 frand_seed_get(void);
+
+// FNV-1a, 32-bit.
+static u32 hash_bytes(u32 hash, const void *data, size_t size)
+{
+    const u8 *p = (const u8 *)data;
+    size_t i;
+    for (i = 0; i < size; i++) {
+        hash ^= p[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static void dump_bytes(const char *name, const void *data, size_t size)
+{
+    const u8 *p = (const u8 *)data;
+    size_t i;
+    fprintf(sChecksumLog, "# dump %s %u bytes:", name, (unsigned)size);
+    for (i = 0; i < size; i++) {
+        fprintf(sChecksumLog, "%s%02x", (i % 32) ? " " : "\n#   ", p[i]);
+    }
+    fprintf(sChecksumLog, "\n");
+}
 
 static int parse_int(const char *text, int lo, int hi, int *out)
 {
@@ -74,6 +107,22 @@ int partyboard_autotest_parse(int argc, char *argv[])
             sAutotest.fast = 1;
         } else if (strcmp(arg, "--loop") == 0) {
             sAutotest.loop = 1;
+        } else if (strcmp(arg, "--dump-frame") == 0 && next) {
+            sAutotest.dumpFrame = (unsigned int)strtoul(next, NULL, 0);
+            i++;
+        } else if (strcmp(arg, "--checksum-log") == 0 && next) {
+            sAutotest.checksumLogPath = next;
+            i++;
+        } else if (strcmp(arg, "--max-frames") == 0 && next) {
+            char *end;
+            unsigned long frames = strtoul(next, &end, 0);
+            if (end != next && *end == '\0' && frames > 0) {
+                sAutotest.maxFrames = (unsigned int)frames;
+            } else {
+                fprintf(stderr, "[autotest] --max-frames expects a positive number, got '%s'\n", next);
+                ok = 0;
+            }
+            i++;
         } else if (strcmp(arg, "--iso") == 0 && next) {
             sAutotest.isoPath = next;
             i++;
@@ -120,6 +169,16 @@ int partyboard_autotest_parse(int argc, char *argv[])
             i++;
         }
     }
+    if (sAutotest.checksumLogPath) {
+        sChecksumLog = fopen(sAutotest.checksumLogPath, "w");
+        if (!sChecksumLog) {
+            fprintf(stderr, "[autotest] cannot open checksum log '%s'\n", sAutotest.checksumLogPath);
+            ok = 0;
+        } else {
+            setvbuf(sChecksumLog, NULL, _IOFBF, 1 << 16);
+            fprintf(sChecksumLog, "# frame ovl frand rand8 boardrand system players playercfg\n");
+        }
+    }
     if (sAutotest.quickstart) {
         printf("[autotest] quickstart: board %d, %d turns, chars %d,%d,%d,%d, cpu level %d, seed %s%u, fast %d\n",
             sAutotest.board, sAutotest.turns, sAutotest.chars[0], sAutotest.chars[1], sAutotest.chars[2],
@@ -148,6 +207,21 @@ void partyboard_autotest_apply_seed(void)
     frand_seed_set(sAutotest.seed ? sAutotest.seed : 1);
     rnd_seed = (s32)sAutotest.seed;
     srand(sAutotest.seed);
+}
+
+int partyboard_autotest_seeded(void)
+{
+    return sAutotest.seedSet;
+}
+
+unsigned int partyboard_autotest_frame_seed(void)
+{
+    // Frame counts match across machines in lockstep, so this stays deterministic.
+    u32 x = (u32)sAutotest.seed ^ (GlobalCounter * 0x9E3779B9u);
+    x ^= x >> 16;
+    x *= 0x7FEB352Du;
+    x ^= x >> 15;
+    return x;
 }
 
 // Mirrors what party mode (mentDll) does before calling the board overlay.
@@ -179,10 +253,46 @@ int partyboard_autotest_next_game(void)
     sAutotest.gamesFinished++;
     printf("[autotest] game %d finished: board %d\n", sAutotest.gamesFinished, sAutotest.board);
     fflush(stdout);
+    if (sChecksumLog) {
+        fprintf(sChecksumLog, "# game %d finished at frame %u\n", sAutotest.gamesFinished, GlobalCounter);
+    }
     if (!sAutotest.loop) {
         PartyBoard_IsRunning = false;
         return 0;
     }
     sAutotest.board = (sAutotest.board + 1) % 6;
     return 1;
+}
+
+void partyboard_autotest_frame_end(void)
+{
+    if (sChecksumLog) {
+        u32 sys = hash_bytes(2166136261u, &GWSystem, sizeof(GWSystem));
+        u32 players = hash_bytes(2166136261u, GWPlayer, sizeof(GWPlayer));
+        u32 cfg = hash_bytes(2166136261u, GWPlayerCfg, sizeof(GWPlayerCfg));
+        if (omcurovl != sLastOvl) {
+            fprintf(sChecksumLog, "# overlay %d at frame %u\n", (int)omcurovl, GlobalCounter);
+            sLastOvl = omcurovl;
+        }
+        fprintf(sChecksumLog, "%u %d %08x %08x %08x %08x %08x %08x\n", GlobalCounter, (int)omcurovl,
+            frand_seed_get(), (u32)rnd_seed, boardRandSeed, sys, players, cfg);
+        if (sAutotest.dumpFrame && GlobalCounter == sAutotest.dumpFrame) {
+            dump_bytes("GWSystem", &GWSystem, sizeof(GWSystem));
+            dump_bytes("GWPlayer", GWPlayer, sizeof(GWPlayer));
+            dump_bytes("GWPlayerCfg", GWPlayerCfg, sizeof(GWPlayerCfg));
+        }
+    }
+    if (sAutotest.maxFrames && GlobalCounter >= sAutotest.maxFrames) {
+        printf("[autotest] reached --max-frames %u\n", sAutotest.maxFrames);
+        fflush(stdout);
+        PartyBoard_IsRunning = false;
+    }
+}
+
+void partyboard_autotest_shutdown(void)
+{
+    if (sChecksumLog) {
+        fclose(sChecksumLog);
+        sChecksumLog = NULL;
+    }
 }

@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <dolphin/pad.h>
 #include <port/settings.h>
+#include <port/autotest.h>
 
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
@@ -264,7 +265,8 @@ void Overlay::update()
     }
 
     u32 buttonCount;
-    const bool showControllerWarning = PADGetIndexForPort(PAD_CHAN0) < 0 && PADGetKeyButtonBindings(PAD_CHAN0, &buttonCount) == nullptr
+    // Quickstart games are all CPU players, so a missing controller doesn't matter.
+    const bool showControllerWarning = !partyboard_autotest_quickstart() && PADGetIndexForPort(PAD_CHAN0) < 0 && PADGetKeyButtonBindings(PAD_CHAN0, &buttonCount) == nullptr
         && dynamic_cast<Window *>(top_document()) == nullptr && dynamic_cast<WindowSmall *>(top_document()) == nullptr;
     if (showControllerWarning && mControllerWarning == nullptr) {
         mControllerWarning = create_controller_warning(mDocument);

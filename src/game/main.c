@@ -198,6 +198,9 @@ void main(void)
         GXReadMemMetric(&cp_req, &tc_req, &cpu_rd_req, &cpu_wr_req, &dsp_req, &io_req, &vi_req, &pe_req, &rf_req, &fi_req);
         HuPerfEnd(2);
         GlobalCounter++;
+#ifdef TARGET_PC
+        partyboard_autotest_frame_end();
+#endif
 
 #ifdef TARGET_PC
         ui_update();

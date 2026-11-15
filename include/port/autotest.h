@@ -12,6 +12,9 @@
 //   --seed <n>            Fix all game RNG seeds so runs are repeatable
 //   --fast                Disable the frame limiter and vsync
 //   --loop                After a game ends, start another on the next board (default: quit)
+//   --checksum-log <path> Write one line per frame: frame, overlay, RNG seeds, game-state hash
+//   --max-frames <n>      Quit after n frames
+//   --dump-frame <n>      Hex-dump the hashed game state into the checksum log at frame n
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,7 +31,10 @@ typedef struct PartyBoardAutotest {
     int fast;
     int loop;
     int gamesFinished;
+    unsigned int maxFrames;
+    unsigned int dumpFrame;
     const char *isoPath;
+    const char *checksumLogPath;
 } PartyBoardAutotest;
 
 // Parses argv; unknown arguments are ignored. Returns 0 on a malformed option.
@@ -38,9 +44,18 @@ const PartyBoardAutotest *partyboard_autotest_get(void);
 // Exported to RELs (see dol.def).
 int partyboard_autotest_quickstart(void);
 void partyboard_autotest_apply_seed(void);
+// Whether --seed was given, and a seed derived from it and the current frame number.
+// Use these to replace clock-based RNG seeding so runs stay repeatable.
+int partyboard_autotest_seeded(void);
+unsigned int partyboard_autotest_frame_seed(void);
 void partyboard_autotest_setup_party(void);
 // Called when a board returns to boot. Returns 1 to start another game, 0 after requesting exit.
 int partyboard_autotest_next_game(void);
+
+// Called once per game frame from the main loop, after GlobalCounter is incremented.
+void partyboard_autotest_frame_end(void);
+// Flushes and closes the checksum log.
+void partyboard_autotest_shutdown(void);
 
 #ifdef __cplusplus
 }
