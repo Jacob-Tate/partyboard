@@ -296,8 +296,15 @@ void partyboard_autotest_setup_party(void)
         GWPlayerCfg[i].group = 0;
         GWPlayerCfg[i].iscom = (sAutotest.humanMask & (1 << i)) ? 0 : 1;
     }
-    GWMessSpeedSet(0);
-    GWMGExplainSet(0);
+    if (partyboard_netplay_active()) {
+        // People are playing: the game's own defaults, with minigame instructions (and Practice).
+        GWMessSpeedSet(1);
+        GWMGExplainSet(1);
+    } else {
+        // Unattended test runs: fast text and no instruction screens to wait on.
+        GWMessSpeedSet(0);
+        GWMGExplainSet(0);
+    }
     GWMGShowComSet(1);
     // Never touch the memory card: whether a save file exists changes how many frames the
     // results screen takes (save path vs. plain fade), which desyncs PCs with different saves.
