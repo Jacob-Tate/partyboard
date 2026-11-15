@@ -704,6 +704,12 @@ SettingsWindow::SettingsWindow(bool prelaunch)
                               "replacements, and other app data.");
             });
 #endif
+        config_bool_select(leftPane, rightPane, getSettings().backend.writeLogFile,
+            {
+                .key = "Write Log File",
+                .helpText = "Keep a copy of everything Party Board prints in logs/partyboard.log in the data folder "
+                            "(the last 3 runs). Send it along when reporting a problem. Takes effect next launch.",
+            });
         leftPane.register_control(leftPane.add_select_button({
                                       .key = "Notifications",
                                       .getValue =

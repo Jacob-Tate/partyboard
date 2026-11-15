@@ -22,6 +22,7 @@
 #include <port/autotest.h>
 #include <port/crashhandler.h>
 #include <port/netplay.h>
+#include <port/log_file.h>
 #include <port/config.hpp>
 #include <port/dolassets.h>
 #include <port/main.h>
@@ -383,6 +384,7 @@ extern "C" int port_main(int argc, char* argv[]) {
         return 0;
     }
     mainCalled = true;
+    partyboard_log_console_setup();
     partyboard_crashhandler_install();
 
     partyboard::registerSettings();
@@ -399,6 +401,10 @@ extern "C" int port_main(int argc, char* argv[]) {
     }
 
     partyboard::config::LoadFromUserPreferences();
+    if (partyboard::getSettings().backend.writeLogFile.getValue()) {
+        const auto logDir = (PartyBoard_ConfigPath / "logs").u8string();
+        partyboard_log_file_start(reinterpret_cast<const char *>(logDir.c_str()));
+    }
     if (!partyboard_autotest_parse(argc, argv) || !partyboard_netplay_parse(argc, argv)) {
         return 1;
     }

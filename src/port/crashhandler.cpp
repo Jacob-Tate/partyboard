@@ -3,6 +3,7 @@
 
 #include "port/crashhandler.h"
 #include "port/autotest.h"
+#include "port/log_file.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -95,6 +96,7 @@ LONG WINAPI on_crash(EXCEPTION_POINTERS *info) {
         print_frame(process, frame.AddrPC.Offset, i);
     }
     fflush(stderr);
+    partyboard_log_file_flush();     // let the report reach logs/partyboard.log before the process dies
     partyboard_autotest_shutdown();  // flush the checksum log up to the crash
     return EXCEPTION_CONTINUE_SEARCH;
 }

@@ -330,7 +330,11 @@ if (WIN32)
     configure_file(${PARTY_BOARD_WINDOWS_RESOURCE_DIR}/partyboard.rc.in ${PARTY_BOARD_WINDOWS_RC} @ONLY)
 
     target_sources(partyboard PRIVATE ${PARTY_BOARD_WINDOWS_ICON_ICO} ${PARTY_BOARD_WINDOWS_RC})
-    #    set_target_properties(partyboard PROPERTIES WIN32_EXECUTABLE TRUE)
+    # A GUI program: no console window behind the game. Started from a terminal it still prints there
+    # (port/log_file.h attaches to the parent console), and its output also goes to logs/partyboard.log.
+    if (MSVC)
+        set_target_properties(partyboard PROPERTIES WIN32_EXECUTABLE TRUE)
+    endif ()
 
     if (MSVC)
         target_link_options(partyboard PRIVATE /MANIFEST:NO)
