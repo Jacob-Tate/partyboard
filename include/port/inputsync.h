@@ -1,7 +1,7 @@
 #ifndef PORT_INPUTSYNC_H
 #define PORT_INPUTSYNC_H
 
-// Controller input source for the game: live pads, a recording, or (later) the network.
+// Controller input source for the game: live pads, a recording, or an online game (port/netplay.h).
 //
 //   --record <file>   Save the game settings and every controller read (needs --quickstart --seed)
 //   --replay <file>   Play a recording back instead of reading the controllers; quits at the end
