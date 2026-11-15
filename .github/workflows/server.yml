@@ -1,0 +1,41 @@
+name: Relay server
+
+on:
+  push:
+    paths:
+      - 'server/**'
+      - 'include/netplay/**'
+      - '.dockerignore'
+      - '.github/workflows/server.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'include/netplay/**'
+  workflow_dispatch:
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -f server/Dockerfile -t partyboard-server .
+
+      - name: Start server container
+        run: |
+          docker run -d --name pbserver -p 7845:7845/udp partyboard-server
+          sleep 2
+          docker logs pbserver
+
+      - name: Integration test against the container
+        run: |
+          docker run --rm --network host --entrypoint partyboard-server-test partyboard-server 127.0.0.1 7845
+
+      - name: Server log
+        if: always()
+        run: docker logs pbserver
+
+      - name: Image size
+        run: docker image ls partyboard-server

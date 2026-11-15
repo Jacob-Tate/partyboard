@@ -1,0 +1,4 @@
+# Only the relay server is built with Docker; it needs nothing but these two folders.
+*
+!server
+!include/netplay
