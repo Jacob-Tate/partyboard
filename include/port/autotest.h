@@ -48,6 +48,8 @@ void partyboard_autotest_apply_seed(void);
 // Use these to replace clock-based RNG seeding so runs stay repeatable.
 int partyboard_autotest_seeded(void);
 unsigned int partyboard_autotest_frame_seed(void);
+// Gives up the CPU briefly while spin-waiting on a worker thread.
+void partyboard_autotest_yield(void);
 void partyboard_autotest_setup_party(void);
 // Called when a board returns to boot. Returns 1 to start another game, 0 after requesting exit.
 int partyboard_autotest_next_game(void);

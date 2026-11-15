@@ -186,6 +186,22 @@ void HuSprDisp(HUSPRITE *sprite)
     }
 }
 
+#ifdef TARGET_PC
+void HuSprBmpDataChanged(ANIMBMP *bmp)
+{
+#ifdef OPTIMIZED_TEXTURE_LOADING
+    // Texture objects are initialized once and cached; bumping the data version makes
+    // Aurora re-upload the pixels instead of drawing the stale GPU copy.
+    s32 i;
+    for (i = 0; i < 8; i++) {
+        if (bmp->texData[i].tex_initialized) {
+            GXInitTexObjData(&bmp->texData[i].tex_obj, bmp->data);
+        }
+    }
+#endif
+}
+#endif
+
 void HuSprTexLoad(ANIMDATA *anim, short bmp, short slot, GXTexWrapMode wrap_s, GXTexWrapMode wrap_t, GXTexFilter filter)
 #ifdef OPTIMIZED_TEXTURE_LOADING
 {

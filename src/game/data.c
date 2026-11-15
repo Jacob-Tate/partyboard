@@ -5,6 +5,9 @@
 
 #ifdef BYTESWAPPING
 #include "port/byteswap.h"
+#ifdef TARGET_PC
+#include "port/autotest.h"
+#endif
 #endif
 
 #define STAT_ID_ARAM 0x10000
@@ -284,6 +287,17 @@ BOOL HuDataGetAsyncStat(s32 statId)
     if(statId == STAT_ID_ARAM) {
         return HuARDMACheck() == 0;
     } else {
+#ifdef TARGET_PC
+        // Aurora completes DVD reads on a worker thread, so how many frames a load takes
+        // depends on disk speed. In deterministic mode, finish the load on the first poll
+        // so every machine sees it complete on the same frame.
+        if (partyboard_autotest_seeded()) {
+            volatile u32 *status = &ReadDataStat[statId].status;
+            while (*status != 0) {
+                partyboard_autotest_yield();
+            }
+        }
+#endif
         return ReadDataStat[statId].status == 0;
     }
 }

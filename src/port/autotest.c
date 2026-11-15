@@ -6,6 +6,7 @@
 #include "game/object.h"
 #include "port/main.h"
 
+#include <SDL3/SDL_timer.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -222,6 +223,11 @@ unsigned int partyboard_autotest_frame_seed(void)
     x *= 0x7FEB352Du;
     x ^= x >> 15;
     return x;
+}
+
+void partyboard_autotest_yield(void)
+{
+    SDL_Delay(0);
 }
 
 // Mirrors what party mode (mentDll) does before calling the board overlay.

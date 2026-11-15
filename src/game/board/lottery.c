@@ -1560,6 +1560,9 @@ static s32 TicketUpdate(ANIMBMP *arg0, Vec *arg1, s32 arg2)
         }
     }
     DCFlushRange(arg0->data, (u32)(arg0->sizeX * arg0->sizeY * 2) >> 3);
+#ifdef TARGET_PC
+    HuSprBmpDataChanged(arg0);
+#endif
     handLastPos = *arg1;
     return 0;
 }

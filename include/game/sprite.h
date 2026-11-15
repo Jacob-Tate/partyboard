@@ -134,6 +134,10 @@ void HuSprDispInit(void);
 void HuSprDisp(HUSPRITE *sprite);
 #if !defined(HUSPR_USE_OLD_DEFS) || !defined(__MWERKS__)
 void HuSprTexLoad(ANIMDATA *anim, s16 bmp, s16 slot, GXTexWrapMode wrap_s, GXTexWrapMode wrap_t, GXTexFilter filter);
+#ifdef TARGET_PC
+// Call after writing to a sprite bitmap's pixels on the CPU, so the GPU copy is refreshed.
+void HuSprBmpDataChanged(ANIMBMP *bmp);
+#endif
 #endif
 void HuSprExecLayerSet(s16 draw_no, s16 layer);
 
