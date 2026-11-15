@@ -435,21 +435,18 @@ void face_letters(Canvas &cv, PbIconFamily f, Ctl c)
     static const Rgba kXboxCol[4] = { { 0.38f, 0.80f, 0.30f, 1 }, { 0.92f, 0.28f, 0.25f, 1 }, { 0.25f, 0.55f, 0.95f, 1 },
         { 0.98f, 0.80f, 0.20f, 1 } };
     const int i = c - C_SOUTH;
-    // Swap A/B and X/Y: the icons still point at the same button position, only the printed letter changes, for
-    // controllers whose letters are the other way round (Nintendo-style pads, or one in a Switch mode).
-    const int li = pb_button_icons_swap_letters() ? (i ^ 1) : i;
     switch (f) {
         case PB_FAMILY_XBOX:
             disc(cv, 0.47f, kBody);
-            text(cv, kXbox[li], 0.5f, 0.5f, 0.46f, 0.36f, 0.11f, kXboxCol[li]);
+            text(cv, kXbox[i], 0.5f, 0.5f, 0.46f, 0.36f, 0.11f, kXboxCol[i]);
             break;
         case PB_FAMILY_STEAMDECK:
             disc(cv, 0.47f, kBody);
-            text(cv, kXbox[li], 0.5f, 0.5f, 0.46f, 0.36f, 0.11f, kWhite);
+            text(cv, kXbox[i], 0.5f, 0.5f, 0.46f, 0.36f, 0.11f, kWhite);
             break;
         case PB_FAMILY_SWITCH:
             disc(cv, 0.47f, kBody);
-            text(cv, kSwitch[li], 0.5f, 0.5f, 0.46f, 0.36f, 0.11f, kWhite);
+            text(cv, kSwitch[i], 0.5f, 0.5f, 0.46f, 0.36f, 0.11f, kWhite);
             break;
         case PB_FAMILY_PLAYSTATION: {
             disc(cv, 0.47f, kBody);
@@ -1009,8 +1006,8 @@ Glyph *make_glyph(const Canvas &cv)
 
 Glyph *glyph(PbIconFamily f, Ctl c)
 {
-    static Glyph *cache[2][PB_FAMILY_COUNT][C_COUNT];
-    Glyph *&g = cache[pb_button_icons_swap_letters()][f][c];
+    static Glyph *cache[PB_FAMILY_COUNT][C_COUNT];
+    Glyph *&g = cache[f][c];
     if (g == nullptr) {
         Canvas cv;
         draw(cv, f, c);
@@ -1329,11 +1326,6 @@ void shot_on_first_icon(int entry)
 } // namespace
 
 extern "C" {
-
-int pb_button_icons_swap_letters(void)
-{
-    return partyboard::getSettings().game.buttonIconsSwapLetters.getValue() ? 1 : 0;
-}
 
 PbIconFamily pb_button_icons_family(int port)
 {

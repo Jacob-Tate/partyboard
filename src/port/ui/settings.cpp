@@ -573,14 +573,6 @@ SettingsWindow::SettingsWindow(bool prelaunch)
                         pb_button_icons_family_name(pb_button_icons_family(port)));
                 }
             });
-        config_bool_select(leftPane, rightPane, getSettings().game.buttonIconsSwapLetters,
-            {
-                .key = "Swap A/B and X/Y Icons",
-                .helpText = "Swap the A and B, and X and Y letters on the button icons, for a controller whose letters are "
-                            "the other way round (a Switch-style controller, or one set to a Switch mode). The icons still "
-                            "point at the same button; only the letter changes. Applies to the Xbox, Switch and Steam Deck "
-                            "icons. Takes full effect on the next screen.",
-            });
 
         leftPane.add_section("Tools");
         addOption("Turbo Key", getSettings().game.enableTurboKeybind, "Hold Tab to unlock the FPS, speeding up the game.",

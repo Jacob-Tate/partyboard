@@ -53,7 +53,6 @@ UserSettings g_userSettings = {
         // Controls
         .enableTurboKeybind {"game.enableTurboKeybind", false},
         .buttonIcons {"game.buttonIcons", 0},
-        .buttonIconsSwapLetters {"game.buttonIconsSwapLetters", false},
 
         // Tools
         .speedrunMode {"game.speedrunMode", false},
@@ -120,7 +119,6 @@ void registerSettings() {
     Register(g_userSettings.game.enableControllerToasts);
     Register(g_userSettings.game.enableTurboKeybind);
     Register(g_userSettings.game.buttonIcons);
-    Register(g_userSettings.game.buttonIconsSwapLetters);
     Register(g_userSettings.game.speedrunMode);
     Register(g_userSettings.game.recordingMode);
     Register(g_userSettings.game.infiniteHearts);
