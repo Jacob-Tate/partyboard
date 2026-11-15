@@ -102,6 +102,7 @@ struct RoomState {
     uint16_t ping[PB_NET_MAX_PLAYERS] = {};
     bool continuing = false;
     std::string savedName[PB_NET_MAX_PLAYERS];
+    uint8_t phase = 0xFF;
 };
 
 RoomState parseRoomState(const std::vector<uint8_t> &msg) {
@@ -130,6 +131,7 @@ RoomState parseRoomState(const std::vector<uint8_t> &msg) {
         pbr_str(&r, name, sizeof(name));
         st.savedName[port] = name;
     }
+    st.phase = pbr_u8(&r);
     st.ok = !r.error && r.pos == r.size;
     return st;
 }
@@ -438,10 +440,11 @@ int main(int argc, char **argv) {
     }
     sendInput(b, 0, 0xB1);
     auto f0 = a.waitFor(PB_MSG_FRAME);
-    CHECK(f0.size() == 1 + 4 + 1 + 2 * kPadSize, "frame 0 carries two pads");
-    if (f0.size() == 1 + 4 + 1 + 2 * kPadSize) {
+    CHECK(f0.size() == 1 + 4 + 2 + 2 * kPadSize, "frame 0 carries two pads");
+    if (f0.size() == 1 + 4 + 2 + 2 * kPadSize) {
         CHECK(f0[5] == 0x03, "human mask covers ports 0 and 1");
-        CHECK(f0[6] == 0xA1 && f0[6 + kPadSize] == 0xB1, "pads in port order");
+        CHECK(f0[6] == 0, "no reload flag");
+        CHECK(f0[7] == 0xA1 && f0[7 + kPadSize] == 0xB1, "pads in port order");
     }
     b.waitFor(PB_MSG_FRAME);
 
@@ -490,10 +493,83 @@ int main(int argc, char **argv) {
     }
     // ...and frame 1 is released with Alice alone, without waiting for Bob.
     auto g1 = a.waitFor(PB_MSG_FRAME);
-    CHECK(g1.size() == 1 + 4 + 1 + kPadSize && g1[5] == 0x01, "frame 1 carries only Alice's pad");
+    CHECK(g1.size() == 1 + 4 + 2 + kPadSize && g1[5] == 0x01, "frame 1 carries only Alice's pad");
     CHECK(a.waitFor(PB_MSG_GAME_ENDED, 300).empty(), "the game keeps going");
     sendInput(a, 2, 0x13);
     CHECK(!a.waitFor(PB_MSG_FRAME).empty(), "later frames flow with one human");
+
+    // ---- Rejoining mid-game ----
+    {
+        // Someone with the name of a person still playing is told to try again (their old connection lingers).
+        TestClient a2;
+        CHECK(a2.connect(hostname, port), "second Alice connects");
+        hello(a2, "Alice");
+        const uint8_t idA2 = a2.waitFor(PB_MSG_WELCOME)[1];
+        simple(a2, PB_MSG_JOIN_ROOM, code, 4);
+        CHECK(expectError(a2, PB_ERR_IN_GAME), "joining under the name of someone still playing is refused");
+
+        // Bob comes back: he waits on his old seat (P2), the players hear about it, FRAMEs ask for a reload.
+        TestClient b2;
+        CHECK(b2.connect(hostname, port), "Bob reconnects");
+        hello(b2, "Bob");
+        const uint8_t idB2 = b2.waitFor(PB_MSG_WELCOME)[1];
+        simple(b2, PB_MSG_JOIN_ROOM, code, 4);
+        RoomState st = parseRoomState(b2.waitFor(PB_MSG_ROOM_STATE));
+        CHECK(st.ok && st.phase == PB_ROOM_IN_GAME && st.count == 2, "Bob is in the room, waiting for the game");
+        auto rejoining = a.waitFor(PB_MSG_REJOINING);
+        CHECK(rejoining.size() > 2 && rejoining[1] == 1, "Alice hears that Bob is coming back to P2");
+        sendInput(a, 3, 0x14);
+        auto f3 = a.waitFor(PB_MSG_FRAME);
+        CHECK(f3.size() > 6 && f3[5] == 0x01 && (f3[6] & PB_FRAME_RELOAD), "frames carry the reload flag");
+        CHECK(b2.waitFor(PB_MSG_FRAME, 300).empty(), "the waiting player gets no game frames");
+        sendChecksum(a, 180, 0x4444);
+        CHECK(a.waitFor(PB_MSG_DESYNC, 300).empty(), "checksums only count the players in the game");
+
+        // Alice's game reaches the save point: the room reloads; Bob keeps P2, P1 waits for Alice by name.
+        uint8_t state[412];
+        for (int i = 0; i < 412; i++) state[i] = static_cast<uint8_t>(i * 3);
+        uint8_t rbuf[16 + sizeof(state)];
+        PbNetWriter rw;
+        pbw_init(&rw, rbuf, sizeof(rbuf));
+        pbw_u8(&rw, PB_MSG_RELOAD_STATE);
+        pbw_u32(&rw, 4);
+        pbw_u16(&rw, sizeof(state));
+        pbw_bytes(&rw, state, sizeof(state));
+        a.send(PB_NET_CHANNEL_CONTROL, rw);
+        st = parseRoomState(b2.waitFor(PB_MSG_ROOM_STATE));
+        CHECK(st.ok && st.phase == PB_ROOM_RELOADING && st.count == 1 && st.owner[1] == idB2 && st.owner[0] == CPU &&
+                  st.continuing && st.savedName[0] == "Alice" && st.savedName[1] == "Bob",
+              "reloading: Bob seated on P2, P1 kept for Alice");
+        CHECK(st.chr[0] == 6 && st.chr[1] == 1 && st.chr[3] == 0, "characters stay with their ports");
+        choose(b2, 0, KEEP);
+        CHECK(expectError(b2, PB_ERR_IN_GAME), "no seat changes while reloading");
+
+        // Alice's restarted game joins: the game starts by itself from the saved state, Alice host again.
+        simple(a2, PB_MSG_JOIN_ROOM, code, 4);
+        st = parseRoomState(a2.waitFor(PB_MSG_ROOM_STATE));
+        CHECK(st.ok && st.owner[0] == idA2 && st.host == idA2, "Alice takes P1 back by name and is host again");
+        auto ga = a2.waitFor(PB_MSG_GAME_START);
+        auto gb = b2.waitFor(PB_MSG_GAME_START);
+        bool ok = false;
+        if (!ga.empty()) {
+            PbNetReader r;
+            PbNetSettings got;
+            pbr_init(&r, ga.data() + 1, ga.size() - 1);
+            pbr_settings(&r, &got);
+            const uint16_t n = pbr_u16(&r);
+            const uint8_t owner[4] = {idA2, idB2, CPU, CPU}, chr[4] = {6, 1, 2, 0};
+            ok = !r.error && n == sizeof(state) && std::memcmp(ga.data() + 1 + r.pos, state, n) == 0 &&
+                 std::memcmp(got.portOwner, owner, 4) == 0 && std::memcmp(got.chars, chr, 4) == 0 && got.seed == 1234;
+        }
+        CHECK(ok && ga == gb, "the reloaded game starts for both from the saved state, Bob human on P2 again");
+        sendInput(a2, 0, 0x31);
+        sendInput(b2, 0, 0x32);
+        auto r0 = b2.waitFor(PB_MSG_FRAME);
+        CHECK(r0.size() == 1 + 4 + 2 + 2 * kPadSize && r0[5] == 0x03 && r0[6] == 0, "the reloaded game's lockstep has both");
+        CHECK(a.waitFor(PB_MSG_FRAME, 300).empty(), "the old connection is out of the room");
+        enet_host_destroy(a2.host);
+        enet_host_destroy(b2.host);
+    }
 
     std::printf(gFailures ? "%d check(s) FAILED\n" : "all checks passed\n", gFailures);
     enet_deinitialize();

@@ -70,6 +70,8 @@ int partyboard_online_save_load(const char *path, PbOnlineSave *out);
 int partyboard_online_save_list(PbOnlineSave *out, int max);
 // The next online game this machine hosts is a continue of `path`: it keeps saving into that file.
 void partyboard_online_save_continue_into(const char *path);
+// The file the game now running saves into, if this machine is the host and has saved; else "".
+const char *partyboard_online_save_host_path(void);
 
 #ifdef __cplusplus
 }

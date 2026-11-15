@@ -384,6 +384,8 @@ extern "C" int port_main(int argc, char* argv[]) {
         return 0;
     }
     mainCalled = true;
+    // A game restarted to rejoin an online room waits for the old process to close first (log file, window).
+    partyboard_netplay_wait_for_parent(argc, argv);
     partyboard_log_console_setup();
     partyboard_crashhandler_install();
 

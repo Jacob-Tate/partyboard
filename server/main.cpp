@@ -82,6 +82,17 @@ struct Room {
     uint32_t lastLobbyStateMs = 0; // lobby: when ROOM_STATE (with fresh pings) last went out
     std::map<uint32_t, PendingFrame> frames;
     std::map<uint32_t, std::map<uint8_t, uint32_t>> checksums;
+    // Who played each port in the running game ("" for a CPU), kept for people coming back mid-game, and
+    // the host's name (the host role goes back to them after a reload).
+    std::array<std::string, PB_NET_MAX_PLAYERS> gameNames;
+    std::string hostName;
+    // Members who joined while the game runs, waiting for the reload that seats them: client id -> port.
+    std::map<uint8_t, int> waiting;
+    // Reloading: the game ended at a save point so everyone can restart from it with the returners seated.
+    bool reloading = false;
+    uint32_t reloadStartMs = 0;
+    uint8_t reloadExpect = 0; // ports whose people we wait for before starting
+    std::vector<uint8_t> reloadState;
 };
 
 std::map<uint8_t, std::unique_ptr<Client>> gClients;
@@ -112,6 +123,15 @@ void broadcast(Room &room, uint8_t channel, const PbNetWriter &w) {
         send(*gClients.at(id), channel, w);
     }
 }
+
+// To the players of the running game only (not those waiting to rejoin it).
+void broadcastGame(Room &room, uint8_t channel, const PbNetWriter &w) {
+    for (uint8_t id : room.members) {
+        if (!room.waiting.count(id)) send(*gClients.at(id), channel, w);
+    }
+}
+
+size_t playingCount(const Room &room) { return room.members.size() - room.waiting.size(); }
 
 const char *const kCharNames[PB_NET_MAX_CHARS] = {"Mario", "Luigi", "Peach", "Yoshi",
                                                   "Wario", "Donkey Kong", "Daisy", "Waluigi"};
@@ -195,6 +215,7 @@ void sendRoomState(Room &room) {
     if (room.continuing) {
         for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) pbw_str(&w, room.savedName[port].c_str(), PB_NET_MAX_NAME);
     }
+    pbw_u8(&w, room.reloading ? PB_ROOM_RELOADING : room.inGame ? PB_ROOM_IN_GAME : PB_ROOM_LOBBY);
     broadcast(room, PB_NET_CHANNEL_CONTROL, w);
 }
 
@@ -215,11 +236,15 @@ void endGame(Room &room, PbNetEndReason reason, uint8_t who) {
     pbw_u8(&w, PB_MSG_GAME_ENDED);
     pbw_u8(&w, reason);
     pbw_u8(&w, who);
-    broadcast(room, PB_NET_CHANNEL_CONTROL, w);
+    broadcastGame(room, PB_NET_CHANNEL_CONTROL, w);
     room.inGame = false;
     room.frames.clear();
     room.checksums.clear();
     logf("room %s: game ended (reason %d)", room.code.c_str(), reason);
+    if (!room.waiting.empty()) {
+        room.waiting.clear(); // anyone waiting to rejoin is now just in the room's lobby
+        sendRoomState(room);
+    }
 }
 
 void flushFrames(Room &room);
@@ -243,7 +268,7 @@ void dropFromGame(Room &room, Client &c) {
     pbw_u8(&w, PB_MSG_PLAYER_DROPPED);
     pbw_u8(&w, c.id);
     pbw_u32(&w, room.nextFrame);
-    broadcast(room, PB_NET_CHANNEL_CONTROL, w);
+    broadcastGame(room, PB_NET_CHANNEL_CONTROL, w);
     logf("room %s: %s dropped at frame %u; CPU takes ports 0x%x", room.code.c_str(), c.name.c_str(), room.nextFrame,
          ports);
     flushFrames(room); // frames that were only waiting on the dropped player can go now
@@ -254,23 +279,31 @@ void leaveRoom(Client &c) {
     if (!room) return;
     c.room = nullptr;
     room->members.erase(std::find(room->members.begin(), room->members.end(), c.id));
+    const bool wasWaiting = room->waiting.erase(c.id) > 0;
     if (const int port = portOf(*room, c.id); port >= 0) {
         room->slotOwner[port] = PB_NET_PORT_CPU;
         if (!room->continuing) room->slotChar[port] = PB_NET_CHAR_AUTO;
     }
     logf("room %s: %s left (%zu remaining)", room->code.c_str(), c.name.c_str(), room->members.size());
-    if (room->members.empty()) {
+    if (room->members.empty() && !room->reloading) { // a reloading room waits for its players to come back
         logf("room %s: closed", room->code.c_str());
         gRooms.erase(room->code);
         return;
     }
-    if (room->inGame) {
+    if (room->inGame && !wasWaiting) {
         dropFromGame(*room, c);
     }
-    if (room->hostId == c.id) {
+    if (room->hostId == c.id && !room->members.empty()) {
+        // The host should be someone playing (the host's game keeps the autosave).
         room->hostId = room->members.front();
+        for (uint8_t id : room->members) {
+            if (!room->waiting.count(id)) {
+                room->hostId = id;
+                break;
+            }
+        }
     }
-    sendRoomState(*room);
+    if (!room->members.empty()) sendRoomState(*room);
 }
 
 // Sends every frame whose inputs are complete, in order.
@@ -284,14 +317,163 @@ void flushFrames(Room &room) {
         pbw_u8(&w, PB_MSG_FRAME);
         pbw_u32(&w, room.nextFrame);
         pbw_u8(&w, room.humanMask);
+        pbw_u8(&w, room.waiting.empty() ? 0 : PB_FRAME_RELOAD);
         for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
             if (room.humanMask & (1 << port)) pbw_bytes(&w, it->second.pads[port].data(), room.padSize);
         }
-        broadcast(room, PB_NET_CHANNEL_INPUT, w);
+        broadcastGame(room, PB_NET_CHANNEL_INPUT, w);
         room.frames.erase(it);
         room.lastProgressMs = enet_time_get();
         room.nextFrame++;
     }
+}
+
+// Starts the room's game for everyone in it: seating and characters from the slots, the rest from s. state is
+// the board state a continued (or reloaded) game starts from, empty for a new game.
+void startGame(Room &room, PbNetSettings s, const std::vector<uint8_t> &state) {
+    const auto chars = resolvedChars(room);
+    std::copy(chars.begin(), chars.end(), s.chars);
+    std::copy(room.slotOwner.begin(), room.slotOwner.end(), s.portOwner);
+    uint8_t humanMask = 0;
+    for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+        const uint8_t owner = s.portOwner[port];
+        if (owner != PB_NET_PORT_CPU) {
+            humanMask |= static_cast<uint8_t>(1 << port);
+            room.gameNames[port] = gClients.at(owner)->name;
+        } else {
+            // A saved seat nobody took keeps its name, so that person can still come back mid-game.
+            room.gameNames[port] = room.continuing ? room.savedName[port] : "";
+        }
+    }
+    room.hostName = gClients.at(room.hostId)->name;
+    room.settings = s;
+    room.humanMask = humanMask;
+    room.inGame = true;
+    room.reloading = false;
+    room.reloadState.clear();
+    room.waiting.clear();
+    room.nextFrame = 0;
+    room.lastProgressMs = enet_time_get();
+    room.frames.clear();
+    room.checksums.clear();
+
+    std::vector<uint8_t> buf(64 + state.size());
+    PbNetWriter w;
+    pbw_init(&w, buf.data(), buf.size());
+    pbw_u8(&w, PB_MSG_GAME_START);
+    pbw_settings(&w, &s);
+    pbw_u16(&w, static_cast<uint16_t>(state.size()));
+    pbw_bytes(&w, state.data(), state.size());
+    broadcast(room, PB_NET_CHANNEL_CONTROL, w);
+    logf("room %s: %s (board %u, %u turns, seed %u, delay %u, human ports 0x%x, chars %u,%u,%u,%u)",
+         room.code.c_str(), state.empty() ? "game started" : "continued game started", s.board, s.turns, s.seed,
+         s.inputDelay, humanMask, s.chars[0], s.chars[1], s.chars[2], s.chars[3]);
+}
+
+// A reloading room starts by itself once everyone it waits for is back, or at the timeout with whoever is.
+void startReloadedIfReady(Room &room) {
+    if (!room.reloading || room.members.empty()) return;
+    uint8_t seated = 0;
+    for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+        if (room.slotOwner[port] != PB_NET_PORT_CPU) seated |= static_cast<uint8_t>(1 << port);
+    }
+    const bool timedOut = enet_time_get() - room.reloadStartMs >= PB_NET_RELOAD_TIMEOUT_MS;
+    if ((seated & room.reloadExpect) != room.reloadExpect && !timedOut) return;
+    if (timedOut) logf("room %s: not everyone came back in time; starting with ports 0x%x", room.code.c_str(), seated);
+    const std::vector<uint8_t> state = room.reloadState;
+    startGame(room, room.settings, state);
+    room.continuing = false;
+    room.savedName = {};
+}
+
+// Someone joins while the game runs: they get a CPU's seat (the one saved under their name if it is free) and
+// wait. From now on every FRAME asks the players' games to reload at their next save point.
+void joinRunningGame(Client &c, Room &room) {
+    int port = -1;
+    bool stillPlaying = false; // the server hasn't noticed this person's old connection drop yet
+    for (uint8_t id : room.members) {
+        stillPlaying |= !room.waiting.count(id) && gClients.at(id)->name == c.name;
+    }
+    const auto isFree = [&](int p) {
+        if (room.humanMask & (1 << p)) return false;
+        for (const auto &[id, claimed] : room.waiting) {
+            if (claimed == p) return false;
+        }
+        return true;
+    };
+    for (int p = 0; p < PB_NET_MAX_PLAYERS && port < 0; p++) {
+        if (isFree(p) && !room.gameNames[p].empty() && room.gameNames[p] == c.name) port = p;
+    }
+    if (port < 0 && stillPlaying) {
+        return sendError(c, PB_ERR_IN_GAME, "the server still has you in this game; try again in a few seconds");
+    }
+    // Otherwise a seat a CPU played all along, then one whose player hasn't come back.
+    for (int pass = 0; pass < 2 && port < 0; pass++) {
+        for (int p = 0; p < PB_NET_MAX_PLAYERS && port < 0; p++) {
+            if (isFree(p) && (pass == 1 || room.gameNames[p].empty())) port = p;
+        }
+    }
+    if (port < 0) return sendError(c, PB_ERR_IN_GAME, "that room's game has no free seat");
+    leaveRoom(c);
+    room.members.push_back(c.id);
+    room.waiting[c.id] = port;
+    c.room = &room;
+    logf("room %s: %s joined the running game for P%d; reloading at the next save point", room.code.c_str(),
+         c.name.c_str(), port + 1);
+    uint8_t buf[64];
+    PbNetWriter w;
+    pbw_init(&w, buf, sizeof(buf));
+    pbw_u8(&w, PB_MSG_REJOINING);
+    pbw_u8(&w, static_cast<uint8_t>(port));
+    pbw_str(&w, c.name.c_str(), PB_NET_MAX_NAME);
+    broadcastGame(room, PB_NET_CHANNEL_CONTROL, w);
+    sendRoomState(room);
+}
+
+// A player's game reached the save point after a reload request: end the game and wait for everyone to come
+// back (their games restart and rejoin by name), then start from this state.
+void onReloadState(Client &c, PbNetReader &r) {
+    Room *room = c.room;
+    const uint32_t frame = pbr_u32(&r);
+    const uint16_t size = pbr_u16(&r);
+    std::vector<uint8_t> state(size <= PB_NET_MAX_CONTINUE_STATE ? size : 0);
+    pbr_bytes(&r, state.data(), state.size());
+    if (r.error || size == 0 || size > PB_NET_MAX_CONTINUE_STATE) {
+        return sendError(c, PB_ERR_BAD_MESSAGE, "malformed RELOAD_STATE");
+    }
+    // The first player there decides; the others' copies (identical in lockstep) arrive after the room moved on.
+    if (!room || !room->inGame || room->waiting.count(c.id)) return;
+    Room &rm = *room;
+    rm.inGame = false;
+    rm.reloading = true;
+    rm.reloadStartMs = enet_time_get();
+    rm.reloadState = std::move(state);
+    rm.frames.clear();
+    rm.checksums.clear();
+    rm.reloadExpect = rm.humanMask; // the people playing now restart and come back
+    // The players leave the room (their games restart); those who waited stay, already in their seats.
+    std::vector<uint8_t> stay;
+    for (uint8_t id : rm.members) {
+        if (rm.waiting.count(id)) {
+            stay.push_back(id);
+        } else {
+            gClients.at(id)->room = nullptr;
+        }
+    }
+    rm.members = stay;
+    rm.continuing = true;
+    rm.slotOwner.fill(PB_NET_PORT_CPU);
+    std::copy(rm.settings.chars, rm.settings.chars + PB_NET_MAX_PLAYERS, rm.slotChar.begin());
+    for (const auto &[id, port] : rm.waiting) {
+        rm.slotOwner[port] = id;
+        rm.gameNames[port] = gClients.at(id)->name;
+    }
+    rm.savedName = rm.gameNames;
+    rm.waiting.clear();
+    if (!rm.members.empty()) rm.hostId = rm.members.front();
+    logf("room %s: reloading from the save point at frame %u (%zu bytes); waiting for ports 0x%x", rm.code.c_str(),
+         frame, rm.reloadState.size(), rm.reloadExpect);
+    if (!rm.members.empty()) sendRoomState(rm);
 }
 
 void onHello(Client &c, PbNetReader &r) {
@@ -350,7 +532,6 @@ void onJoinRoom(Client &c, PbNetReader &r) {
     auto it = gRooms.find(code);
     if (it == gRooms.end()) return sendError(c, PB_ERR_NO_SUCH_ROOM, "no room with that code");
     Room &room = *it->second;
-    if (room.inGame) return sendError(c, PB_ERR_IN_GAME, "that room is already playing");
     if (room.members.size() >= PB_NET_MAX_PLAYERS) return sendError(c, PB_ERR_ROOM_FULL, "room is full");
     if (c.build != room.build || c.padSize != room.padSize) {
         // Build ids look like "Nov 15 2026 04:20:31/16" (compile time / pad size): show the times.
@@ -360,19 +541,23 @@ void onJoinRoom(Client &c, PbNetReader &r) {
                       when(c.build).c_str(), when(room.build).c_str());
         return sendError(c, PB_ERR_VERSION, msg);
     }
+    if (room.inGame) return joinRunningGame(c, room);
     leaveRoom(c);
     room.members.push_back(c.id);
     seat(room, c.id);
+    if (room.reloading && c.name == room.hostName) room.hostId = c.id; // the host role goes back to the host
     c.room = &room;
-    logf("room %s: %s joined (%zu players)", room.code.c_str(), c.name.c_str(), room.members.size());
+    logf("room %s: %s joined (%zu players)%s", room.code.c_str(), c.name.c_str(), room.members.size(),
+         room.reloading ? " for the reload" : "");
     sendRoomState(room);
+    startReloadedIfReady(room);
 }
 
 void onStartGame(Client &c, PbNetReader &r) {
     Room *room = c.room;
     if (!room) return sendError(c, PB_ERR_NO_SUCH_ROOM, "not in a room");
     if (room->hostId != c.id) return sendError(c, PB_ERR_NOT_HOST, "only the host can start");
-    if (room->inGame) return sendError(c, PB_ERR_IN_GAME, "already playing");
+    if (room->inGame || room->reloading) return sendError(c, PB_ERR_IN_GAME, "already playing");
     PbNetSettings s;
     pbr_settings(&r, &s);
     const uint16_t stateSize = pbr_u16(&r);
@@ -387,41 +572,18 @@ void onStartGame(Client &c, PbNetReader &r) {
     std::copy(chars.begin(), chars.end(), s.chars);
     std::copy(room->slotOwner.begin(), room->slotOwner.end(), s.portOwner);
     if (!pb_settings_valid(&s)) return sendError(c, PB_ERR_BAD_SETTINGS, "invalid game settings");
-
-    uint8_t humanMask = 0;
     for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
         const uint8_t owner = s.portOwner[port];
-        if (owner == PB_NET_PORT_CPU) continue;
-        if (std::find(room->members.begin(), room->members.end(), owner) == room->members.end()) {
+        if (owner != PB_NET_PORT_CPU && std::find(room->members.begin(), room->members.end(), owner) == room->members.end()) {
             return sendError(c, PB_ERR_BAD_SETTINGS, "a port is assigned to someone not in the room");
         }
-        humanMask |= static_cast<uint8_t>(1 << port);
     }
     for (uint8_t id : room->members) {
         bool ownsPort = false;
         for (uint8_t owner : s.portOwner) ownsPort |= owner == id;
         if (!ownsPort) return sendError(c, PB_ERR_BAD_SETTINGS, "every player in the room needs a port");
     }
-
-    room->settings = s;
-    room->humanMask = humanMask;
-    room->inGame = true;
-    room->nextFrame = 0;
-    room->lastProgressMs = enet_time_get();
-    room->frames.clear();
-    room->checksums.clear();
-
-    std::vector<uint8_t> buf(64 + state.size());
-    PbNetWriter w;
-    pbw_init(&w, buf.data(), buf.size());
-    pbw_u8(&w, PB_MSG_GAME_START);
-    pbw_settings(&w, &s);
-    pbw_u16(&w, static_cast<uint16_t>(state.size()));
-    pbw_bytes(&w, state.data(), state.size());
-    broadcast(*room, PB_NET_CHANNEL_CONTROL, w);
-    logf("room %s: %s (board %u, %u turns, seed %u, delay %u, human ports 0x%x, chars %u,%u,%u,%u)",
-         room->code.c_str(), state.empty() ? "game started" : "continued game started", s.board, s.turns, s.seed,
-         s.inputDelay, humanMask, s.chars[0], s.chars[1], s.chars[2], s.chars[3]);
+    startGame(*room, s, state);
 }
 
 // Name of whoever holds a slot, for error messages.
@@ -436,7 +598,7 @@ void onChoose(Client &c, PbNetReader &r) {
     const uint8_t wantChar = pbr_u8(&r);
     if (r.error) return sendError(c, PB_ERR_BAD_MESSAGE, "malformed CHOOSE");
     if (!room) return sendError(c, PB_ERR_NO_SUCH_ROOM, "not in a room");
-    if (room->inGame) return sendError(c, PB_ERR_IN_GAME, "the game has started");
+    if (room->inGame || room->reloading) return sendError(c, PB_ERR_IN_GAME, "the game has started");
     if ((wantPort != PB_NET_KEEP && wantPort >= PB_NET_MAX_PLAYERS) ||
         (wantChar != PB_NET_KEEP && wantChar >= PB_NET_MAX_CHARS)) {
         return sendError(c, PB_ERR_BAD_MESSAGE, "no such port or character");
@@ -483,7 +645,7 @@ void onSetLayout(Client &c, PbNetReader &r) {
     if (r.error) return sendError(c, PB_ERR_BAD_MESSAGE, "malformed SET_LAYOUT");
     if (!room) return sendError(c, PB_ERR_NO_SUCH_ROOM, "not in a room");
     if (room->hostId != c.id) return sendError(c, PB_ERR_NOT_HOST, "only the host can arrange the ports");
-    if (room->inGame) return sendError(c, PB_ERR_IN_GAME, "the game has started");
+    if (room->inGame || room->reloading) return sendError(c, PB_ERR_IN_GAME, "the game has started");
     if (room->continuing && chars != room->slotChar) {
         return sendError(c, PB_ERR_BAD_SETTINGS, "characters are fixed in a continued game");
     }
@@ -531,7 +693,7 @@ void onSetContinue(Client &c, PbNetReader &r) {
     if (r.error) return sendError(c, PB_ERR_BAD_MESSAGE, "malformed SET_CONTINUE");
     if (!room) return sendError(c, PB_ERR_NO_SUCH_ROOM, "not in a room");
     if (room->hostId != c.id) return sendError(c, PB_ERR_NOT_HOST, "only the host can continue a game");
-    if (room->inGame) return sendError(c, PB_ERR_IN_GAME, "the game has started");
+    if (room->inGame || room->reloading) return sendError(c, PB_ERR_IN_GAME, "the game has started");
     for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
         for (int other = 0; enabled && other < port; other++) {
             if (chars[port] >= PB_NET_MAX_CHARS || chars[port] == chars[other]) {
@@ -551,7 +713,7 @@ void onSetContinue(Client &c, PbNetReader &r) {
 
 void onInput(Client &c, PbNetReader &r) {
     Room *room = c.room;
-    if (!room || !room->inGame) return; // stale input after a game ended
+    if (!room || !room->inGame || room->waiting.count(c.id)) return; // stale input after a game ended
     const uint32_t frame = pbr_u32(&r);
     if (r.error) return sendError(c, PB_ERR_BAD_MESSAGE, "malformed INPUT");
     if (frame < room->nextFrame || frame >= room->nextFrame + kMaxFramesAhead) return;
@@ -567,13 +729,13 @@ void onInput(Client &c, PbNetReader &r) {
 
 void onChecksum(Client &c, PbNetReader &r) {
     Room *room = c.room;
-    if (!room || !room->inGame) return;
+    if (!room || !room->inGame || room->waiting.count(c.id)) return;
     const uint32_t frame = pbr_u32(&r);
     const uint32_t hash = pbr_u32(&r);
     if (r.error) return;
     auto &reports = room->checksums[frame];
     reports[c.id] = hash;
-    if (reports.size() < room->members.size()) return;
+    if (reports.size() < playingCount(*room)) return;
     bool agree = true;
     for (const auto &[id, h] : reports) agree &= h == reports.begin()->second;
     room->checksums.erase(frame);
@@ -585,7 +747,7 @@ void onChecksum(Client &c, PbNetReader &r) {
     pbw_init(&w, buf, sizeof(buf));
     pbw_u8(&w, PB_MSG_DESYNC);
     pbw_u32(&w, frame);
-    broadcast(*room, PB_NET_CHANNEL_CONTROL, w);
+    broadcastGame(*room, PB_NET_CHANNEL_CONTROL, w);
     endGame(*room, PB_END_DESYNC, 0xFF);
 }
 
@@ -605,6 +767,7 @@ void onReceive(Client &c, ENetPacket *packet) {
     case PB_MSG_CHOOSE: return onChoose(c, r);
     case PB_MSG_SET_LAYOUT: return onSetLayout(c, r);
     case PB_MSG_SET_CONTINUE: return onSetContinue(c, r);
+    case PB_MSG_RELOAD_STATE: return onReloadState(c, r);
     default: return sendError(c, PB_ERR_BAD_MESSAGE, "unknown message type");
     }
 }
@@ -612,8 +775,17 @@ void onReceive(Client &c, ENetPacket *packet) {
 // Called often from the main loop: tells players who a stalled game is waiting for, and refreshes lobby pings.
 void tick() {
     const uint32_t now = enet_time_get();
-    for (auto &[code, roomPtr] : gRooms) {
-        Room &room = *roomPtr;
+    for (auto it = gRooms.begin(); it != gRooms.end();) {
+        Room &room = *it->second;
+        if (room.reloading && now - room.reloadStartMs >= PB_NET_RELOAD_TIMEOUT_MS) {
+            if (room.members.empty()) {
+                logf("room %s: nobody came back after the reload; closed", room.code.c_str());
+                it = gRooms.erase(it);
+                continue;
+            }
+            startReloadedIfReady(room);
+        }
+        ++it;
         if (room.inGame) {
             const uint32_t waited = now - room.lastProgressMs;
             if (waited >= 500 && now - room.lastWaitingMs >= 500) {
@@ -626,7 +798,7 @@ void tick() {
                 pbw_u8(&w, PB_MSG_WAITING);
                 pbw_u8(&w, missing);
                 pbw_u16(&w, static_cast<uint16_t>(std::min<uint32_t>(waited, 65535)));
-                broadcast(room, PB_NET_CHANNEL_CONTROL, w);
+                broadcastGame(room, PB_NET_CHANNEL_CONTROL, w);
                 room.lastWaitingMs = now;
             }
         } else if (now - room.lastLobbyStateMs >= 2000) {

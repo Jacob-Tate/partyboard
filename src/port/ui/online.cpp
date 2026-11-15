@@ -3,6 +3,7 @@
 #include "number_button.hpp"
 #include "pane.hpp"
 #include "port/config.hpp"
+#include "netplay/protocol.h"
 #include "port/netplay.h"
 #include "port/online_save.h"
 #include "port/settings.h"
@@ -327,6 +328,12 @@ namespace {
             if (partyboard_netplay_notice()[0]) {
                 return Rml::String("Can't: ") + partyboard_netplay_notice();
             }
+            if (partyboard_netplay_room_phase() == PB_ROOM_IN_GAME) {
+                return "Game in progress - you're back in after this round's minigame";
+            }
+            if (partyboard_netplay_room_phase() == PB_ROOM_RELOADING) {
+                return "The game restarts once everyone is back";
+            }
             return partyboard_netplay_is_host() ? "Hosting - start when ready" : "Waiting for the host to start";
         case PB_LOBBY_STARTED:
             return "Starting!";
@@ -611,7 +618,11 @@ OnlineWindow::OnlineWindow()
                                       .getValue = [] { return status_text(); },
                                       .submit = false,
                                   }),
-            rightPane, [](Pane &pane) { pane.add_rml("Connection and room status."); });
+            rightPane, [](Pane &pane) {
+                pane.add_rml("Connection and room status.<br/><br/>Dropped out of a game? Join the same room code "
+                             "with the same name: you get your seat back after the current round's minigame, when "
+                             "everyone's game restarts from that save point.");
+            });
         leftPane.register_control(leftPane.add_select_button({
                                       .key = "Room Code",
                                       .getValue = [] {
@@ -627,7 +638,10 @@ OnlineWindow::OnlineWindow()
                                           const int c = my_char();
                                           return c >= 0 ? char_name(c) : Rml::String("Any");
                                       },
-                                      .isDisabled = [] { return partyboard_netplay_room_continuing() != 0; },
+                                      .isDisabled = [] {
+                                          return partyboard_netplay_room_continuing() != 0 ||
+                                                 partyboard_netplay_room_phase() != PB_ROOM_LOBBY;
+                                      },
                                   }),
             rightPane, [](Pane &pane) {
                 const bool pictures = portraits::ensure_loaded();

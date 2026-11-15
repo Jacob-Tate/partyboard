@@ -17,6 +17,10 @@
 //   --teams                 With --create: team battle, P1+P2 against P3+P4
 //   --no-bonus-stars        With --create: no bonus stars at the end of the party
 //
+// Rejoining mid-game: --join the room's code with the same --name. Everyone's game restarts at the next save
+// point (after the current round's minigame) and continues from there with you back in your seat. The
+// restarted games get --reloaded, --wait-pid <old pid> and, on the host, --save-into <its autosave>.
+//
 // The host's --board, --turns, --cpu-level and --seed choose the game; the host's --chars sets all
 // four characters. Without --port/--char, people get ports 1, 2, ... in join order and the first
 // free characters; the remaining ports are CPU players with the characters nobody took. Each person
@@ -88,6 +92,9 @@ const struct PbOnlineSave *partyboard_netplay_pending_continue(void);
 // In a room that continues a saved game: who played `port` in the save ("" for a CPU seat).
 int partyboard_netplay_room_continuing(void);
 const char *partyboard_netplay_saved_name(int port);
+// The room's phase (PB_ROOM_* in netplay/protocol.h): 0 lobby, 1 a game is running (we wait to rejoin it at its
+// next save point), 2 the game restarts from a save point once everyone is back.
+int partyboard_netplay_room_phase(void);
 // Leaves the room and disconnects (not once the game has started).
 void partyboard_netplay_leave(void);
 PbNetLobbyState partyboard_netplay_state(void);
@@ -109,6 +116,13 @@ int partyboard_netplay_active(void);
 u32 partyboard_netplay_pad_read(PADStatus *status);
 // Reports the game-state hash for a frame so the server can detect desyncs.
 void partyboard_netplay_checksum(u32 frame, u32 hash);
+// The game reached a save point (resultDll, after a minigame); state is the board state a continue starts
+// from. If someone is waiting to rejoin, sends it to the server and quits; the shutdown then restarts this
+// program, which rejoins the room and continues from that state with everyone else.
+void partyboard_netplay_save_point(const u8 *state, int size);
+// Rejoining after a reload: a restarted game first waits for the old process (--wait-pid) to exit, so the two
+// never share the log file or the window. Call first thing in main.
+void partyboard_netplay_wait_for_parent(int argc, char *argv[]);
 void partyboard_netplay_shutdown(void);
 
 #ifdef __cplusplus

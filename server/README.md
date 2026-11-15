@@ -8,6 +8,10 @@ anyone drifts out of sync.
 - Protocol: [`include/netplay/protocol.h`](../include/netplay/protocol.h), shared with the game
 - Transport: [ENet](http://enet.bespin.org/) over UDP, default port **7845**
 - Rooms: 4-letter codes, up to 4 players, all on the same Party Board build
+- A player who drops is replaced by a CPU. If they join the same code again, the server seats them
+  on a CPU's seat (their own, matched by name) and flags the frames; at the next save point every player's game sends
+  its board state and restarts, rejoins the room by name, and the server starts the game again from
+  that state by itself (or after 60 seconds with whoever is back). Rooms survive that restart.
 
 ## Run with Docker
 

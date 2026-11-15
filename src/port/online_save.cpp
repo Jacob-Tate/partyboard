@@ -195,14 +195,30 @@ extern "C" void partyboard_online_save_turn(int player)
 
 extern "C" void partyboard_online_save_resume_point(void)
 {
-    if (!partyboard_netplay_active() || !begin()) {
+    if (!partyboard_netplay_active()) {
         return;
     }
-    capture(-1, gSave.resume);
-    gSave.hasResume = true;
-    char what[64];
-    std::snprintf(what, sizeof(what), "resume point after turn %d's minigame", GWSystem.turn);
-    report(what);
+    std::array<u8, kStateSize> state{};
+    capture(-1, state);
+    if (begin()) {
+        gSave.resume = state;
+        gSave.hasResume = true;
+        char what[64];
+        std::snprintf(what, sizeof(what), "resume point after turn %d's minigame", GWSystem.turn);
+        report(what);
+    }
+    // Every machine: if someone waits to rejoin, the game restarts from here (after the host has saved it).
+    partyboard_netplay_save_point(state.data(), static_cast<int>(kStateSize));
+}
+
+extern "C" const char *partyboard_online_save_host_path(void)
+{
+    static std::string path;
+    path.clear();
+    if (partyboard_netplay_is_host() && !gSave.path.empty()) {
+        path = reinterpret_cast<const char *>(gSave.path.u8string().c_str());
+    }
+    return path.c_str();
 }
 
 extern "C" void partyboard_online_save_party_over(void)

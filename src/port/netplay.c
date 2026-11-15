@@ -9,6 +9,7 @@
 
 #include <enet/enet.h>
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_messagebox.h>
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_video.h>
 #include "game/object.h" // after enet.h: it pulls in windows.h, which must not come before winsock2
@@ -17,6 +18,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifndef _WIN32
+#include <signal.h>
+#include <unistd.h>
+#endif
 
 #define NET_RING 1024           // received frames buffered ahead of the game
 #define NET_WAIT_TIMEOUT_MS 20000 // give up if a frame's inputs haven't arrived in this long
@@ -25,6 +30,7 @@ typedef struct NetFrame {
     u32 frame;
     int valid;
     u8 humanMask;
+    u8 flags; // PB_FRAME_*
     PADStatus pads[PB_NET_MAX_PLAYERS];
 } NetFrame;
 
@@ -55,6 +61,14 @@ static u32 sFrame = 0; // next frame the game will consume
 static int sPrimed = 0;
 static NetFrame sRing[NET_RING];
 static char sBuildId[PB_NET_MAX_BUILD_ID + 1];
+// Rejoin: the latest frame asked for a reload at the next save point (lockstep, so the same on every machine);
+// sReloading once we reached it and quit to restart.
+static int sReloadWanted = 0;
+static int sReloading = 0;
+static int sReloaded = 0; // --reloaded: this process is such a restart
+// The command line, to restart with (without the netplay options, which the restart sets itself).
+static int sArgc = 0;
+static char **sArgv = NULL;
 
 static void parse_server(const char *server);
 
@@ -66,6 +80,8 @@ int partyboard_netplay_parse(int argc, char *argv[])
     int ok = 1;
     const char *user = getenv("USERNAME");
     snprintf(sName, sizeof(sName), "%s", user && user[0] ? user : "Player");
+    sArgc = argc;
+    sArgv = argv;
     for (i = 1; i < argc; i++) {
         const char *arg = argv[i];
         const char *next = (i + 1 < argc) ? argv[i + 1] : NULL;
@@ -121,6 +137,14 @@ int partyboard_netplay_parse(int argc, char *argv[])
                 sHasPendingContinue = 1;
             }
             i++;
+        } else if (strcmp(arg, "--save-into") == 0 && next) {
+            // A restarted host keeps autosaving into the game's file (see partyboard_netplay_save_point).
+            partyboard_online_save_continue_into(next);
+            i++;
+        } else if (strcmp(arg, "--reloaded") == 0) {
+            sReloaded = 1;
+        } else if (strcmp(arg, "--wait-pid") == 0 && next) {
+            i++; // handled by partyboard_netplay_wait_for_parent
         } else if (strcmp(arg, "--port") == 0 && next) {
             sPrefPort = atoi(next) - 1;
             if (sPrefPort < 0 || sPrefPort >= PB_NET_MAX_PLAYERS) {
@@ -202,6 +226,7 @@ static void handle_frame(PbNetReader *r)
 {
     const u32 frame = pbr_u32(r);
     const u8 mask = pbr_u8(r);
+    const u8 flags = pbr_u8(r);
     NetFrame *slot = &sRing[frame % NET_RING];
     int port;
     if (r->error || frame < sFrame || frame >= sFrame + NET_RING) {
@@ -209,6 +234,7 @@ static void handle_frame(PbNetReader *r)
     }
     memset(slot, 0, sizeof(*slot));
     slot->humanMask = mask;
+    slot->flags = flags;
     for (port = 0; port < PB_NET_MAX_PLAYERS; port++) {
         if (mask & (1 << port)) {
             pbr_bytes(r, &slot->pads[port], sizeof(PADStatus));
@@ -244,6 +270,7 @@ static u8 sSlotAuto[PB_NET_MAX_PLAYERS];
 // A continued game's room (ROOM_STATE): who played each seat in the save ("" = a CPU).
 static int sRoomContinuing = 0;
 static char sSavedNames[PB_NET_MAX_PLAYERS][PB_NET_MAX_NAME + 1];
+static u8 sRoomPhase = PB_ROOM_LOBBY;
 // GAME_START's saved board state (a continued game), 0 bytes for a new game.
 static u8 sStartState[PB_NET_MAX_CONTINUE_STATE];
 static u16 sStartStateSize = 0;
@@ -319,6 +346,14 @@ static void handle_packet(const u8 *data, size_t size)
         if (sRoomContinuing) {
             printf("[netplay]   continuing a saved game\n");
         }
+        sRoomPhase = pbr_u8(&r);
+        if (r.error) {
+            sRoomPhase = PB_ROOM_LOBBY;
+        } else if (sRoomPhase == PB_ROOM_IN_GAME && !sActive) {
+            printf("[netplay]   a game is running: you're back in at its next save point (after this round's minigame)\n");
+        } else if (sRoomPhase == PB_ROOM_RELOADING) {
+            printf("[netplay]   the game restarts from its save point once everyone is back\n");
+        }
         fflush(stdout);
         sRoomStateTime = enet_time_get();
         break;
@@ -351,6 +386,22 @@ static void handle_packet(const u8 *data, size_t size)
         sWaitingMask = pbr_u8(&r);
         sWaitingMs = pbr_u16(&r);
         break;
+    case PB_MSG_REJOINING: {
+        char name[PB_NET_MAX_NAME + 1];
+        const u8 port = pbr_u8(&r);
+        pbr_str(&r, name, sizeof(name));
+        if (!r.error && sActive) {
+            char msg[200];
+            snprintf(msg, sizeof(msg),
+                "%s is coming back as P%u. After this round's minigame everyone's game restarts (the window closes and "
+                "reopens) and goes on from there.",
+                name, port + 1u);
+            printf("[netplay] %s\n", msg);
+            fflush(stdout);
+            ui_push_toast("", "Player rejoining", msg, 10000);
+        }
+        break;
+    }
     case PB_MSG_PLAYER_DROPPED: {
         const u8 who = pbr_u8(&r);
         const u32 frame = pbr_u32(&r);
@@ -413,6 +464,7 @@ static void drop_connection(void)
     sRoomCode[0] = '\0';
     sNotice[0] = '\0';
     sRoomContinuing = 0;
+    sRoomPhase = PB_ROOM_LOBBY;
 }
 
 static void fail(const char *why)
@@ -517,6 +569,8 @@ static void finalize_start(void)
     // A continued game boots the board from the saved state instead of a new party (same on every machine).
     partyboard_autotest_set_continue_state(sStartStateSize ? sStartState : NULL, sStartStateSize);
     partyboard_autotest_set_party_options(sSettings.teams, sSettings.bonusStars);
+    memset(sRing, 0, sizeof(sRing));
+    sReloadWanted = 0;
     if (sStartStateSize) {
         printf("[netplay] continuing a saved game (%u bytes of board state)\n", sStartStateSize);
     }
@@ -721,6 +775,11 @@ int partyboard_netplay_suggested_delay(void)
     return frames < 2 ? 2 : (frames > 15 ? 15 : frames);
 }
 
+int partyboard_netplay_room_phase(void)
+{
+    return sRoomCount > 0 ? sRoomPhase : PB_ROOM_LOBBY;
+}
+
 int partyboard_netplay_room_continuing(void)
 {
     return sRoomCount > 0 && sRoomContinuing;
@@ -922,6 +981,11 @@ int partyboard_netplay_lobby(void)
     while (sState != PB_LOBBY_STARTED) {
         lobby_update(50);
         if (sState == PB_LOBBY_FAILED) {
+            if (sReloaded) {
+                char msg[400];
+                snprintf(msg, sizeof(msg), "Couldn't get back into the online game after it restarted:\n%s", sError);
+                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Party Board", msg, NULL);
+            }
             return 0;
         }
         if (sNotice[0]) {
@@ -1073,6 +1137,15 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
     int waited = 0;
     int port;
 
+    if (sReloading) {
+        // Quitting to restart: the last frames before the window closes need no one else's input.
+        for (port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+            memset(&status[port], 0, sizeof(PADStatus));
+            status[port].err = PAD_ERR_NO_CONTROLLER;
+        }
+        PartyBoard_IsRunning = false;
+        return 0;
+    }
     if (sEnded) {
         for (port = 0; port < PB_NET_MAX_PLAYERS; port++) {
             memset(&status[port], 0, sizeof(PADStatus));
@@ -1174,6 +1247,12 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
         }
         sHumanMask = slot->humanMask;
     }
+    if (((slot->flags & PB_FRAME_RELOAD) != 0) != sReloadWanted) {
+        sReloadWanted = (slot->flags & PB_FRAME_RELOAD) != 0;
+        printf("[netplay] frame %u: %s\n", sFrame,
+            sReloadWanted ? "someone is rejoining; restarting at the next save point" : "nobody is waiting to rejoin any more");
+        fflush(stdout);
+    }
     memcpy(status, slot->pads, sizeof(slot->pads));
     slot->valid = 0;
     sFrame++;
@@ -1193,6 +1272,197 @@ void partyboard_netplay_checksum(u32 frame, u32 hash)
     pbw_u32(&w, frame);
     pbw_u32(&w, hash);
     send_writer(PB_NET_CHANNEL_CONTROL, &w);
+}
+
+// ---- rejoin: restarting at a save point ----
+
+static char sRelaunchCode[PB_NET_ROOM_CODE_LEN + 1];
+static char sRelaunchSave[600];
+
+void partyboard_netplay_save_point(const u8 *state, int size)
+{
+    u8 buf[16 + PB_NET_MAX_CONTINUE_STATE];
+    PbNetWriter w;
+    if (!sActive || sEnded || sReloading || !sReloadWanted || size <= 0 || size > PB_NET_MAX_CONTINUE_STATE) {
+        return;
+    }
+    pbw_init(&w, buf, sizeof(buf));
+    pbw_u8(&w, PB_MSG_RELOAD_STATE);
+    pbw_u32(&w, sFrame);
+    pbw_u16(&w, (u16)size);
+    pbw_bytes(&w, state, (size_t)size);
+    send_writer(PB_NET_CHANNEL_CONTROL, &w);
+    snprintf(sRelaunchCode, sizeof(sRelaunchCode), "%s", sRoomCode);
+    // The host's restarted game keeps writing the same autosave.
+    snprintf(sRelaunchSave, sizeof(sRelaunchSave), "%s", partyboard_online_save_host_path());
+    printf("[netplay] frame %u: save point; restarting so the returning player can join (room %s)\n", sFrame,
+        sRelaunchCode);
+    fflush(stdout);
+    sReloading = 1;
+    PartyBoard_IsRunning = false;
+}
+
+#ifdef _WIN32
+// Appends one argument to a Windows command line, quoted the way CommandLineToArgvW reads it back.
+static void append_arg(char *cmd, size_t cap, const char *arg)
+{
+    size_t len = strlen(cmd);
+    const char *p;
+#define PUT(ch)                                                                                                        \
+    do {                                                                                                               \
+        if (len + 1 < cap) {                                                                                           \
+            cmd[len++] = (ch);                                                                                         \
+            cmd[len] = '\0';                                                                                           \
+        }                                                                                                              \
+    } while (0)
+    if (len > 0) {
+        PUT(' ');
+    }
+    PUT('"');
+    for (p = arg;; p++) {
+        int slashes = 0;
+        int k;
+        while (*p == '\\') {
+            slashes++;
+            p++;
+        }
+        if (*p == '\0') {
+            for (k = 0; k < slashes * 2; k++) {
+                PUT('\\');
+            }
+            break;
+        }
+        if (*p == '"') {
+            for (k = 0; k < slashes * 2 + 1; k++) {
+                PUT('\\');
+            }
+        } else {
+            for (k = 0; k < slashes; k++) {
+                PUT('\\');
+            }
+        }
+        PUT(*p);
+    }
+    PUT('"');
+#undef PUT
+}
+#endif
+
+// Starts this program again to rejoin the room: the original command line without its netplay options, then
+// --server/--join/--name for the same room. The new process waits for this one to exit (--wait-pid).
+static void relaunch(void)
+{
+    static const char *const withValue[] = { "--server", "--join", "--players", "--delay", "--name", "--char", "--port",
+        "--continue", "--save-into", "--wait-pid" };
+    static const char *const flags[] = { "--create", "--teams", "--no-bonus-stars", "--reloaded" };
+    const char *args[160];
+    char server[300], pid[32], checksumLog[1024];
+    int n = 0;
+    int i;
+    size_t k;
+    args[n++] = (sArgv && sArgc > 0) ? sArgv[0] : "partyboard";
+    for (i = 1; i < sArgc && n < 140; i++) {
+        const char *arg = sArgv[i];
+        int skip = 0;
+        for (k = 0; k < sizeof(withValue) / sizeof(withValue[0]); k++) {
+            if (strcmp(arg, withValue[k]) == 0) {
+                skip = 2;
+            }
+        }
+        for (k = 0; k < sizeof(flags) / sizeof(flags[0]); k++) {
+            if (strcmp(arg, flags[k]) == 0) {
+                skip = 1;
+            }
+        }
+        if (skip) {
+            i += skip - 1;
+            continue;
+        }
+        if (strcmp(arg, "--checksum-log") == 0 && i + 1 < sArgc) {
+            // Tests compare logs per process: the restarted game writes <log>.reload.
+            snprintf(checksumLog, sizeof(checksumLog), "%s.reload", sArgv[i + 1]);
+            args[n++] = arg;
+            args[n++] = checksumLog;
+            i++;
+            continue;
+        }
+        args[n++] = arg;
+    }
+    snprintf(server, sizeof(server), "%s:%u", sServerHost ? sServerHost : "", sServerPort);
+#ifdef _WIN32
+    snprintf(pid, sizeof(pid), "%lu", (unsigned long)GetCurrentProcessId());
+#else
+    snprintf(pid, sizeof(pid), "%ld", (long)getpid());
+#endif
+    args[n++] = "--wait-pid";
+    args[n++] = pid;
+    args[n++] = "--reloaded";
+    args[n++] = "--server";
+    args[n++] = server;
+    args[n++] = "--join";
+    args[n++] = sRelaunchCode;
+    args[n++] = "--name";
+    args[n++] = sName;
+    if (sRelaunchSave[0]) {
+        args[n++] = "--save-into";
+        args[n++] = sRelaunchSave;
+    }
+    args[n] = NULL;
+#ifdef _WIN32
+    {
+        static char cmd[16384];
+        static wchar_t wcmd[16384];
+        wchar_t exe[MAX_PATH * 2];
+        STARTUPINFOW si;
+        PROCESS_INFORMATION pi;
+        cmd[0] = '\0';
+        for (i = 0; i < n; i++) {
+            append_arg(cmd, sizeof(cmd), args[i]);
+        }
+        if (GetModuleFileNameW(NULL, exe, MAX_PATH * 2) == 0 ||
+            MultiByteToWideChar(CP_UTF8, 0, cmd, -1, wcmd, (int)(sizeof(wcmd) / sizeof(wcmd[0]))) == 0) {
+            printf("[netplay] can't restart: %lu\n", (unsigned long)GetLastError());
+            return;
+        }
+        memset(&si, 0, sizeof(si));
+        si.cb = sizeof(si);
+        if (!CreateProcessW(exe, wcmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+            printf("[netplay] can't restart: error %lu\n", (unsigned long)GetLastError());
+            return;
+        }
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+    }
+#else
+    if (fork() == 0) {
+        execvp(args[0], (char *const *)args);
+        _exit(127);
+    }
+#endif
+    printf("[netplay] restarted to rejoin room %s\n", sRelaunchCode);
+    fflush(stdout);
+}
+
+void partyboard_netplay_wait_for_parent(int argc, char *argv[])
+{
+    int i;
+    for (i = 1; i + 1 < argc; i++) {
+        if (strcmp(argv[i], "--wait-pid") == 0) {
+            const unsigned long pid = strtoul(argv[i + 1], NULL, 10);
+#ifdef _WIN32
+            HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, (DWORD)pid);
+            if (process != NULL) {
+                WaitForSingleObject(process, 20000);
+                CloseHandle(process);
+            }
+#else
+            int tries;
+            for (tries = 0; tries < 400 && kill((pid_t)pid, 0) == 0; tries++) {
+                usleep(50000);
+            }
+#endif
+        }
+    }
 }
 
 void partyboard_netplay_shutdown(void)
@@ -1219,4 +1489,8 @@ void partyboard_netplay_shutdown(void)
         sEnetReady = 0;
     }
     sActive = 0;
+    if (sReloading) {
+        sReloading = 0;
+        relaunch();
+    }
 }
