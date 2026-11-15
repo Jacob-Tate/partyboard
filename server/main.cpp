@@ -140,6 +140,33 @@ void endGame(Room &room, PbNetEndReason reason, uint8_t who) {
     logf("room %s: game ended (reason %d)", room.code.c_str(), reason);
 }
 
+void flushFrames(Room &room);
+
+// Mid-game disconnect: the player's ports stop being human from the next frame the server sends,
+// so every client switches them to CPU on the same frame. The game ends only if no humans remain.
+void dropFromGame(Room &room, Client &c) {
+    uint8_t ports = 0;
+    for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+        if (room.settings.portOwner[port] == c.id) ports |= static_cast<uint8_t>(1 << port);
+    }
+    room.humanMask &= static_cast<uint8_t>(~ports);
+    for (auto &[frame, reports] : room.checksums) reports.erase(c.id);
+    if (room.humanMask == 0) {
+        endGame(room, PB_END_PLAYER_LEFT, c.id);
+        return;
+    }
+    uint8_t buf[8];
+    PbNetWriter w;
+    pbw_init(&w, buf, sizeof(buf));
+    pbw_u8(&w, PB_MSG_PLAYER_DROPPED);
+    pbw_u8(&w, c.id);
+    pbw_u32(&w, room.nextFrame);
+    broadcast(room, PB_NET_CHANNEL_CONTROL, w);
+    logf("room %s: %s dropped at frame %u; CPU takes ports 0x%x", room.code.c_str(), c.name.c_str(), room.nextFrame,
+         ports);
+    flushFrames(room); // frames that were only waiting on the dropped player can go now
+}
+
 void leaveRoom(Client &c) {
     Room *room = c.room;
     if (!room) return;
@@ -152,7 +179,7 @@ void leaveRoom(Client &c) {
         return;
     }
     if (room->inGame) {
-        endGame(*room, PB_END_PLAYER_LEFT, c.id);
+        dropFromGame(*room, c);
     }
     if (room->hostId == c.id) {
         room->hostId = room->members.front();
@@ -164,7 +191,7 @@ void leaveRoom(Client &c) {
 void flushFrames(Room &room) {
     for (;;) {
         auto it = room.frames.find(room.nextFrame);
-        if (it == room.frames.end() || it->second.have != room.humanMask) return;
+        if (it == room.frames.end() || (it->second.have & room.humanMask) != room.humanMask) return;
         uint8_t buf[8 + PB_NET_MAX_PLAYERS * PB_NET_MAX_PAD_SIZE];
         PbNetWriter w;
         pbw_init(&w, buf, sizeof(buf));

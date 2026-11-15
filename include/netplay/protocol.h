@@ -19,7 +19,7 @@
 extern "C" {
 #endif
 
-#define PB_NET_PROTOCOL_VERSION 1
+#define PB_NET_PROTOCOL_VERSION 2
 #define PB_NET_DEFAULT_PORT 7845
 #define PB_NET_CHANNEL_CONTROL 0
 #define PB_NET_CHANNEL_INPUT 1
@@ -50,6 +50,9 @@ typedef enum PbNetMsg {
     PB_MSG_FRAME = 68,       // u32 frame, u8 humanMask, for each set bit (port 0..3): u8 pad[padSize]
     PB_MSG_DESYNC = 69,      // u32 frame
     PB_MSG_GAME_ENDED = 70,  // u8 reason (PbNetEndReason), u8 clientId (who left, or 0xFF)
+    // A player disconnected mid-game. Their ports leave the FRAME human mask starting at u32 frame;
+    // every client turns those ports into CPU players when it reaches that frame.
+    PB_MSG_PLAYER_DROPPED = 71, // u8 clientId, u32 frame
 } PbNetMsg;
 
 typedef enum PbNetError {

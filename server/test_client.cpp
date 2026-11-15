@@ -203,14 +203,30 @@ int main(int argc, char **argv) {
     CHECK(!a.waitFor(PB_MSG_DESYNC).empty() && !b.waitFor(PB_MSG_DESYNC).empty(), "mismatch reported to both");
     CHECK(!a.waitFor(PB_MSG_GAME_ENDED).empty(), "game ended after desync");
 
-    // A player leaving mid-game ends it for the rest.
+    // A player leaving mid-game: their port becomes CPU and the game goes on for the rest.
     simple(a, PB_MSG_START_GAME, sbuf, sw.pos);
     a.waitFor(PB_MSG_GAME_START);
     b.waitFor(PB_MSG_GAME_START);
+    sendInput(a, 0, 0x11);
+    sendInput(a, 1, 0x12); // frames 0-1 wait on Bob...
+    sendInput(b, 0, 0x21);
+    auto g0 = a.waitFor(PB_MSG_FRAME);
+    CHECK(g0.size() > 5 && g0[5] == 0x03, "frame 0 has both players");
     enet_peer_disconnect(b.peer, 0);
     b.pump(200);
-    auto ended = a.waitFor(PB_MSG_GAME_ENDED, 3000);
-    CHECK(ended.size() == 3 && ended[1] == PB_END_PLAYER_LEFT && ended[2] == idB, "Bob leaving ends the game");
+    auto dropped = a.waitFor(PB_MSG_PLAYER_DROPPED, 3000);
+    CHECK(dropped.size() == 6 && dropped[1] == idB, "Bob's drop is announced");
+    if (dropped.size() == 6) {
+        PbNetReader r;
+        pbr_init(&r, dropped.data() + 2, 4);
+        CHECK(pbr_u32(&r) == 1, "takeover starts at the first frame not yet sent");
+    }
+    // ...and frame 1 is released with Alice alone, without waiting for Bob.
+    auto g1 = a.waitFor(PB_MSG_FRAME);
+    CHECK(g1.size() == 1 + 4 + 1 + kPadSize && g1[5] == 0x01, "frame 1 carries only Alice's pad");
+    CHECK(a.waitFor(PB_MSG_GAME_ENDED, 300).empty(), "the game keeps going");
+    sendInput(a, 2, 0x13);
+    CHECK(!a.waitFor(PB_MSG_FRAME).empty(), "later frames flow with one human");
 
     std::printf(gFailures ? "%d check(s) FAILED\n" : "all checks passed\n", gFailures);
     enet_deinitialize();

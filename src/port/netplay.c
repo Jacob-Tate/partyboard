@@ -1,6 +1,7 @@
 #include "port/netplay.h"
 
 #include "netplay/protocol.h"
+#include "game/gamework_data.h"
 #include "port/autotest.h"
 #include "port/main.h"
 
@@ -17,6 +18,7 @@
 typedef struct NetFrame {
     u32 frame;
     int valid;
+    u8 humanMask;
     PADStatus pads[PB_NET_MAX_PLAYERS];
 } NetFrame;
 
@@ -168,6 +170,7 @@ static void handle_frame(PbNetReader *r)
         return;
     }
     memset(slot, 0, sizeof(*slot));
+    slot->humanMask = mask;
     for (port = 0; port < PB_NET_MAX_PLAYERS; port++) {
         if (mask & (1 << port)) {
             pbr_bytes(r, &slot->pads[port], sizeof(PADStatus));
@@ -240,6 +243,13 @@ static void handle_packet(const u8 *data, size_t size)
         char why[96];
         snprintf(why, sizeof(why), "DESYNC detected at frame %u - the game has drifted apart", pbr_u32(&r));
         end_game(why);
+        break;
+    }
+    case PB_MSG_PLAYER_DROPPED: {
+        const u8 who = pbr_u8(&r);
+        const u32 frame = pbr_u32(&r);
+        printf("[netplay] player %u disconnected; a CPU takes over from frame %u\n", who, frame);
+        fflush(stdout);
         break;
     }
     case PB_MSG_GAME_ENDED: {
@@ -491,6 +501,21 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
             end_game("timed out waiting for the other players");
             return partyboard_netplay_pad_read(status);
         }
+    }
+    if (slot->humanMask != sHumanMask) {
+        // A player dropped: every client reaches this frame's bundle with the same mask, so the
+        // CPU takes over on the same frame everywhere.
+        for (port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+            if ((sHumanMask & (1 << port)) && !(slot->humanMask & (1 << port))) {
+                GWPlayerCfg[port].iscom = 1;
+                GWPlayerCfg[port].diff = sSettings.cpuLevel;
+                GWPlayer[port].com = 1;
+                GWPlayer[port].diff = sSettings.cpuLevel;
+                printf("[netplay] frame %u: player %d is now a CPU\n", sFrame, port + 1);
+                fflush(stdout);
+            }
+        }
+        sHumanMask = slot->humanMask;
     }
     memcpy(status, slot->pads, sizeof(slot->pads));
     slot->valid = 0;
