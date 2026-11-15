@@ -29,7 +29,26 @@ docker run -d --name partyboard-server --restart unless-stopped -p 7845:7845/udp
     ghcr.io/jacob-tate/partyboard-server:latest
 ```
 
-To build the image yourself instead, from the repository root:
+## Docker Swarm / Portainer
+
+[`portainer-stack.yml`](portainer-stack.yml) runs one instance pinned to a labelled node, with the
+UDP port published in host mode.
+
+1. Label the node players will connect to (from a manager):
+   `docker node update --label-add partyboard=true <node-name>`
+2. Portainer: **Stacks > Add stack**, paste the file (or point **Repository** at
+   `server/portainer-stack.yml` on the `netplay` branch), **Deploy the stack**.
+3. Open UDP 7845 on that node. Players connect to that node's address.
+
+To update: open the stack in Portainer, **Update the stack** with **Re-pull image** enabled.
+Check it from the node: `docker exec $(docker ps -qf name=partyboard_relay) partyboard-server-test 127.0.0.1 7845`
+(replace `partyboard` with your stack name).
+
+Keep `replicas: 1`: rooms live in memory, so a second instance would split players between them.
+
+## Build the image yourself
+
+From the repository root:
 `docker build -f server/Dockerfile -t partyboard-server .`
 
 Open **UDP** port 7845 on the host's firewall (and forward it on the router if the host is at home).

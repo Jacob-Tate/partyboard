@@ -29,6 +29,9 @@ jobs:
       - name: Image name (GHCR needs lowercase)
         run: echo "IMAGE=${IMAGE,,}" >> "$GITHUB_ENV"
 
+      - name: Validate Swarm/Portainer stack file
+        run: docker compose -f server/portainer-stack.yml config --quiet
+
       - name: Build image
         run: docker build -f server/Dockerfile -t partyboard-server .
 
