@@ -89,8 +89,10 @@ set(PORT_FILES
         src/port/achievements.cpp
         src/port/audio.cpp
         src/port/autotest.c
+        src/port/inputsync.c
         src/port/byteswap.cpp
         src/port/config.cpp
+        src/port/crashhandler.cpp
         src/port/dolassets.cpp
         #        src/port/dvd.c
         src/port/file_select.cpp

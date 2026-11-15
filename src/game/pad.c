@@ -1,6 +1,9 @@
 #include "dolphin.h"
 #include "game/msm.h"
 #include "game/pad.h"
+#ifdef TARGET_PC
+#include "port/inputsync.h"
+#endif
 
 #ifndef __MWERKS__
 #include <stdlib.h>
@@ -157,7 +160,12 @@ static void PadReadVSync(u32 retraceCount)
     s16 i;
     PADStatus status[4];
     if(!HuDvdErrWait) {
+#ifdef TARGET_PC
+        // Live pads, a recording, or (netplay) the network: see port/inputsync.h.
+        RumbleBit = partyboard_input_pad_read(status);
+#else
         RumbleBit = PADRead(status);
+#endif
         PADClamp(status);
         chan = 0;
         for(i=0; i<4; i++) {

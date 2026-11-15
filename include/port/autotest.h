@@ -10,6 +10,8 @@
 //   --turns <n>           Turn count for --quickstart (default 10)
 //   --chars <a,b,c,d>     Character ids 0-7 for players 1-4 (default 0,1,2,3)
 //   --cpu-level <0-3>     CPU difficulty (default 1)
+//   --humans <0-4>        First N players are human, on controller ports 1-N (default 0)
+//   --record / --replay   Input recording, see port/inputsync.h
 //   --seed <n>            Fix all game RNG seeds so runs are repeatable
 //   --fast                Disable the frame limiter and vsync
 //   --loop                After a game ends, start another on the next board (default: quit)
@@ -27,6 +29,7 @@ typedef struct PartyBoardAutotest {
     int turns;
     int chars[4];
     int cpuLevel;
+    int humans;
     int seedSet;
     unsigned int seed;
     int fast;
@@ -52,6 +55,9 @@ unsigned int partyboard_autotest_frame_seed(void);
 // Gives up the CPU briefly while spin-waiting on a worker thread.
 void partyboard_autotest_yield(void);
 void partyboard_autotest_setup_party(void);
+// Applies the game settings stored in an input recording (implies --quickstart and --seed).
+void partyboard_autotest_configure_replay(unsigned int seed, int board, int turns, const int chars[4], int cpuLevel,
+    int humans);
 // Called when a board returns to boot. Returns 1 to start another game, 0 after requesting exit.
 int partyboard_autotest_next_game(void);
 

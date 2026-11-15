@@ -20,6 +20,7 @@
 #include <game/disp.h>
 #include <port/audio.h>
 #include <port/autotest.h>
+#include <port/crashhandler.h>
 #include <port/config.hpp>
 #include <port/dolassets.h>
 #include <port/main.h>
@@ -381,6 +382,7 @@ extern "C" int port_main(int argc, char* argv[]) {
         return 0;
     }
     mainCalled = true;
+    partyboard_crashhandler_install();
 
     partyboard::registerSettings();
     partyboard::config::FinishRegistration();

@@ -6,6 +6,9 @@
 #include "game/audio.h"
 #include "game/thpmain.h"
 #include "game/gamework_data.h"
+#ifdef TARGET_PC
+#include "port/inputsync.h"
+#endif
 
 #include "version.h"
 
@@ -121,6 +124,15 @@ static void HuPreRstChk(void)
 {
 	static PADStatus padStat[4];
 	int i;
+#ifdef TARGET_PC
+	// A local soft reset would desync recorded or networked games.
+	if (partyboard_input_is_synced()) {
+		for (i = 0; i < 4; i++) {
+			SR_PreRstChk[i] = 0;
+		}
+		return;
+	}
+#endif
 	PADRead(padStat);
 	for(i=0; i<4; i++) {
 		PADStatus *status = &padStat[i];

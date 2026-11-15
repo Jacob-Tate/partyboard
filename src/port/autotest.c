@@ -5,6 +5,7 @@
 #include "game/gamework_data.h"
 #include "game/object.h"
 #include "game/saveload.h"
+#include "port/inputsync.h"
 #include "port/main.h"
 
 #include <SDL3/SDL_timer.h>
@@ -21,6 +22,7 @@ static PartyBoardAutotest sAutotest = {
     10,             // turns
     { 0, 1, 2, 3 }, // chars
     1,              // cpuLevel
+    0,              // humans
     0,              // seedSet
     0,              // seed
     0,              // fast
@@ -98,6 +100,8 @@ int partyboard_autotest_parse(int argc, char *argv[])
 {
     int i;
     int ok = 1;
+    const char *recordPath = NULL;
+    const char *replayPath = NULL;
     for (i = 1; i < argc; i++) {
         const char *arg = argv[i];
         const char *next = (i + 1 < argc) ? argv[i + 1] : NULL;
@@ -137,10 +141,12 @@ int partyboard_autotest_parse(int argc, char *argv[])
             }
             i++;
         } else if (strcmp(arg, "--turns") == 0 && next) {
-            if (parse_int(next, 1, 99, &value)) {
+            // At least 3: board events divide by (max_turn / 3), e.g. w03Dll/statue.c. The real game
+            // never goes below 10, and PowerPC doesn't trap on divide by zero but x86 does.
+            if (parse_int(next, 3, 99, &value)) {
                 sAutotest.turns = value;
             } else {
-                fprintf(stderr, "[autotest] --turns expects 1-99, got '%s'\n", next);
+                fprintf(stderr, "[autotest] --turns expects 3-99, got '%s'\n", next);
                 ok = 0;
             }
             i++;
@@ -151,6 +157,20 @@ int partyboard_autotest_parse(int argc, char *argv[])
                 fprintf(stderr, "[autotest] --cpu-level expects 0-3, got '%s'\n", next);
                 ok = 0;
             }
+            i++;
+        } else if (strcmp(arg, "--humans") == 0 && next) {
+            if (parse_int(next, 0, 4, &value)) {
+                sAutotest.humans = value;
+            } else {
+                fprintf(stderr, "[autotest] --humans expects 0-4, got '%s'\n", next);
+                ok = 0;
+            }
+            i++;
+        } else if (strcmp(arg, "--record") == 0 && next) {
+            recordPath = next;
+            i++;
+        } else if (strcmp(arg, "--replay") == 0 && next) {
+            replayPath = next;
             i++;
         } else if (strcmp(arg, "--chars") == 0 && next) {
             if (!parse_chars(next, sAutotest.chars)) {
@@ -170,6 +190,9 @@ int partyboard_autotest_parse(int argc, char *argv[])
             }
             i++;
         }
+    }
+    if (ok && !partyboard_input_open(recordPath, replayPath)) {
+        ok = 0;
     }
     if (sAutotest.checksumLogPath) {
         sChecksumLog = fopen(sAutotest.checksumLogPath, "w");
@@ -211,6 +234,19 @@ void partyboard_autotest_apply_seed(void)
     srand(sAutotest.seed);
 }
 
+void partyboard_autotest_configure_replay(unsigned int seed, int board, int turns, const int chars[4], int cpuLevel,
+    int humans)
+{
+    sAutotest.quickstart = 1;
+    sAutotest.seedSet = 1;
+    sAutotest.seed = seed;
+    sAutotest.board = board;
+    sAutotest.turns = turns;
+    memcpy(sAutotest.chars, chars, sizeof(sAutotest.chars));
+    sAutotest.cpuLevel = cpuLevel;
+    sAutotest.humans = humans;
+}
+
 int partyboard_autotest_seeded(void)
 {
     return sAutotest.seedSet;
@@ -241,7 +277,7 @@ void partyboard_autotest_setup_party(void)
         GWPlayerCfg[i].pad_idx = i;
         GWPlayerCfg[i].diff = sAutotest.cpuLevel;
         GWPlayerCfg[i].group = 0;
-        GWPlayerCfg[i].iscom = 1;
+        GWPlayerCfg[i].iscom = (i < sAutotest.humans) ? 0 : 1;
     }
     GWMessSpeedSet(0);
     GWMGExplainSet(0);
@@ -301,6 +337,7 @@ void partyboard_autotest_frame_end(void)
 
 void partyboard_autotest_shutdown(void)
 {
+    partyboard_input_close();
     if (sChecksumLog) {
         fclose(sChecksumLog);
         sChecksumLog = NULL;
