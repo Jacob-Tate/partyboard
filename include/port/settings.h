@@ -104,6 +104,7 @@ struct UserSettings {
         // Controls
         ConfigVar<bool> enableTurboKeybind;
         ConfigVar<int> buttonIcons; // PB_ICONS_* (port/button_icons.h)
+        ConfigVar<bool> buttonIconsSwapLetters; // A<->B and X<->Y on lettered icons (Nintendo-style pads)
 
         // Tools
         ConfigVar<bool> speedrunMode;

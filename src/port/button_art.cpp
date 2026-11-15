@@ -607,6 +607,7 @@ const Redrawn &redrawn(const Art &art, const std::vector<Rgba8> &orig, PbIconFam
     std::vector<int> key = glyphs;
     key.push_back(f);
     key.push_back(mips);
+    key.push_back(pb_button_icons_swap_letters());
     auto it = cache.find({ &art, key });
     if (it == cache.end()) {
         it = cache.emplace(std::make_pair(&art, key), redraw(art, orig, f, glyphs, mips)).first;

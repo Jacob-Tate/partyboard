@@ -39,6 +39,9 @@ struct AnimData_s;
 
 /* The family whose glyphs pad port `port` (0-3) shows under the current setting. */
 PbIconFamily pb_button_icons_family(int port);
+/* 1 when the game.buttonIconsSwapLetters setting swaps A/B and X/Y on the lettered families (Xbox, Switch,
+ * Steam Deck). Glyph caches are keyed by it, so changing it takes effect for icons drawn afterwards. */
+int pb_button_icons_swap_letters(void);
 /* Display name of a family ("Xbox", ...). */
 const char *pb_button_icons_family_name(PbIconFamily family);
 
