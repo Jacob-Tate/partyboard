@@ -7,6 +7,9 @@
 #include "game/object.h"
 #include "game/wipe.h"
 #include "game/gamework_data.h"
+#ifdef TARGET_PC
+#include "port/audio.h"
+#endif
 
 #define HUMSMHEAP_SIZE 0x13FC00
 
@@ -485,8 +488,14 @@ void HuAudDllSndGrpSet(u16 ovl) {
 
 #define SNDGRP_TIMEOUT 500
 
+#ifdef TARGET_PC
+// Frame-locked audio only advances once per game frame, so a spin here would always time out.
+#define SNDGRP_WAIT(tickStart) \
+    while(!partyboard_audio_frame_locked() && (msmMusGetNumPlay(TRUE) != 0 || msmSeGetNumPlay(TRUE) != 0) && OSTicksToMilliseconds(OSGetTick()-(tickStart)) < SNDGRP_TIMEOUT)
+#else
 #define SNDGRP_WAIT(tickStart) \
     while((msmMusGetNumPlay(TRUE) != 0 || msmSeGetNumPlay(TRUE) != 0) && OSTicksToMilliseconds(OSGetTick()-(tickStart)) < SNDGRP_TIMEOUT)
+#endif
 
 
 void HuAudSndGrpSetSet(s16 grpSet) {

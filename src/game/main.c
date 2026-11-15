@@ -25,6 +25,7 @@
 #include "port/dolassets.h"
 #include "port/ui.h"
 #include "port/autotest.h"
+#include "port/audio.h"
 #include "aurora/dvd.h"
 #include <aurora/aurora.h>
 #include <aurora/event.h>
@@ -199,6 +200,7 @@ void main(void)
         HuPerfEnd(2);
         GlobalCounter++;
 #ifdef TARGET_PC
+        partyboard_audio_frame();
         partyboard_autotest_frame_end();
 #endif
 
