@@ -48,7 +48,9 @@ You need: Windows 10 or 11 (64-bit), and your own Mario Party 4 (USA) disc image
 
 Good to know
   - Everyone must use the same PartyBoard.exe; the server rejects different versions.
-  - If someone disconnects, a CPU takes over their player and the party goes on.
+  - If someone disconnects, a CPU takes over their player and the party goes on. To get back in, they
+    join the same Room Code with the same name: after that round's minigame everyone's game restarts
+    by itself (the window closes and reopens) and goes on with them back in their seat.
   - If the game stops to wait for someone, the window title says who.
   - START pauses the game for everyone.
   - Something went wrong? Settings > Interface > Open Data Folder, and send logs\\partyboard.log.
