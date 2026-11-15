@@ -19,7 +19,7 @@
 extern "C" {
 #endif
 
-#define PB_NET_PROTOCOL_VERSION 2
+#define PB_NET_PROTOCOL_VERSION 3
 #define PB_NET_DEFAULT_PORT 7845
 #define PB_NET_CHANNEL_CONTROL 0
 #define PB_NET_CHANNEL_INPUT 1
@@ -30,6 +30,9 @@ extern "C" {
 #define PB_NET_ROOM_CODE_LEN 4
 #define PB_NET_MAX_PAD_SIZE 64
 #define PB_NET_PORT_CPU 0xFF       // portOwner value for a CPU-controlled port
+#define PB_NET_MAX_CHARS 8         // character ids 0-7: Mario Luigi Peach Yoshi Wario DK Daisy Waluigi
+#define PB_NET_CHAR_AUTO 0xFF      // CPU slot: take the first character nobody else has
+#define PB_NET_KEEP 0xFF           // CHOOSE: leave this field unchanged
 #define PB_NET_CHECKSUM_INTERVAL 60 // clients report a checksum every this many frames
 
 typedef enum PbNetMsg {
@@ -38,14 +41,29 @@ typedef enum PbNetMsg {
     PB_MSG_CREATE_ROOM = 2, // (empty)
     PB_MSG_JOIN_ROOM = 3,   // char code[4]
     PB_MSG_LEAVE_ROOM = 4,  // (empty)
-    PB_MSG_START_GAME = 5,  // PbNetSettings (host only)
+    // PbNetSettings (host only). chars and portOwner are ignored: the server fills them in from the
+    // room's slots, so what everyone saw in the lobby is what they play.
+    PB_MSG_START_GAME = 5,
     PB_MSG_INPUT = 6,       // u32 frame, then u8 pad[padSize] for each port this client owns, in port order
     PB_MSG_CHECKSUM = 7,    // u32 frame, u32 hash
+    // In a room, before the game: move to a free port and/or pick a character for yourself.
+    // u8 port (0-3 or PB_NET_KEEP), u8 char (0-7 or PB_NET_KEEP). Moving onto a CPU's port swaps
+    // with that CPU. A port held by another person, or a character another slot holds, is rejected
+    // with PB_ERR_TAKEN and nothing changes.
+    PB_MSG_CHOOSE = 8,
+    // Host only, before the game: replaces the whole slot layout at once (rearranging people,
+    // choosing CPU ports and CPU characters). u8 owner[4] (client id or PB_NET_PORT_CPU),
+    // u8 char[4] (0-7; CPU slots may use PB_NET_CHAR_AUTO). Every room member must own exactly one
+    // port and the explicit characters must be distinct.
+    PB_MSG_SET_LAYOUT = 9,
 
     // server -> client
     PB_MSG_WELCOME = 64,     // u8 clientId
     PB_MSG_ERROR = 65,       // u8 PbNetError, str message
-    PB_MSG_ROOM_STATE = 66,  // char code[4], u8 hostId, u8 count, count x (u8 id, str name)
+    // char code[4], u8 hostId, u8 count, count x (u8 id, str name),
+    // then 4 slots x (u8 owner, u8 char, u8 isAuto). char is always resolved to 0-7 (an AUTO CPU
+    // shows the character it will get); isAuto is 1 for a CPU the server picks for.
+    PB_MSG_ROOM_STATE = 66,
     PB_MSG_GAME_START = 67,  // PbNetSettings
     PB_MSG_FRAME = 68,       // u32 frame, u8 humanMask, for each set bit (port 0..3): u8 pad[padSize]
     PB_MSG_DESYNC = 69,      // u32 frame
@@ -63,6 +81,7 @@ typedef enum PbNetError {
     PB_ERR_IN_GAME = 5,     // room is already playing
     PB_ERR_NOT_HOST = 6,
     PB_ERR_BAD_SETTINGS = 7,
+    PB_ERR_TAKEN = 8,       // CHOOSE/SET_LAYOUT asked for a port or character someone else holds
 } PbNetError;
 
 typedef enum PbNetEndReason {
@@ -162,6 +181,25 @@ static inline void pbr_settings(PbNetReader *r, PbNetSettings *s) {
     s->inputDelay = pbr_u8(r);
     pbr_bytes(r, s->chars, PB_NET_MAX_PLAYERS);
     pbr_bytes(r, s->portOwner, PB_NET_MAX_PLAYERS);
+}
+
+// Resolves a slot layout's characters: explicit picks stay, each PB_NET_CHAR_AUTO slot takes the
+// lowest character id no other slot uses, in port order. out may alias chosen.
+static inline void pb_resolve_chars(const uint8_t chosen[PB_NET_MAX_PLAYERS], uint8_t out[PB_NET_MAX_PLAYERS]) {
+    uint8_t used = 0; // bit per character
+    uint8_t result[PB_NET_MAX_PLAYERS];
+    int i, c;
+    for (i = 0; i < PB_NET_MAX_PLAYERS; i++) {
+        if (chosen[i] < PB_NET_MAX_CHARS) used |= (uint8_t)(1 << chosen[i]);
+    }
+    for (i = 0; i < PB_NET_MAX_PLAYERS; i++) {
+        result[i] = chosen[i];
+        if (chosen[i] < PB_NET_MAX_CHARS) continue;
+        for (c = 0; c < PB_NET_MAX_CHARS && (used & (1 << c)); c++) {}
+        result[i] = (uint8_t)c;
+        used |= (uint8_t)(1 << c);
+    }
+    memcpy(out, result, sizeof(result));
 }
 
 // Validates settings the server will hand to every client.

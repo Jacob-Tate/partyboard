@@ -6,6 +6,7 @@
 
 #include <enet/enet.h>
 
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -91,6 +92,60 @@ void simple(TestClient &c, uint8_t type, const void *payload = nullptr, size_t n
     c.send(PB_NET_CHANNEL_CONTROL, w);
 }
 
+struct RoomState {
+    bool ok = false;
+    uint8_t host = 0;
+    uint8_t count = 0;
+    uint8_t owner[PB_NET_MAX_PLAYERS] = {};
+    uint8_t chr[PB_NET_MAX_PLAYERS] = {};
+    uint8_t isAuto[PB_NET_MAX_PLAYERS] = {};
+};
+
+RoomState parseRoomState(const std::vector<uint8_t> &msg) {
+    RoomState st;
+    if (msg.empty() || msg[0] != PB_MSG_ROOM_STATE) return st;
+    PbNetReader r;
+    pbr_init(&r, msg.data() + 1, msg.size() - 1);
+    char code[PB_NET_ROOM_CODE_LEN];
+    pbr_bytes(&r, code, sizeof(code));
+    st.host = pbr_u8(&r);
+    st.count = pbr_u8(&r);
+    for (int i = 0; i < st.count; i++) {
+        char name[PB_NET_MAX_NAME + 1];
+        pbr_u8(&r);
+        pbr_str(&r, name, sizeof(name));
+    }
+    for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+        st.owner[port] = pbr_u8(&r);
+        st.chr[port] = pbr_u8(&r);
+        st.isAuto[port] = pbr_u8(&r);
+    }
+    st.ok = !r.error && r.pos == r.size;
+    return st;
+}
+
+bool slotsAre(const RoomState &st, const uint8_t owner[4], const uint8_t chr[4]) {
+    return st.ok && std::memcmp(st.owner, owner, 4) == 0 && std::memcmp(st.chr, chr, 4) == 0;
+}
+
+void choose(TestClient &c, uint8_t port, uint8_t chr) {
+    const uint8_t payload[2] = {port, chr};
+    simple(c, PB_MSG_CHOOSE, payload, 2);
+}
+
+void setLayout(TestClient &c, const uint8_t owner[4], const uint8_t chr[4]) {
+    uint8_t payload[8];
+    std::memcpy(payload, owner, 4);
+    std::memcpy(payload + 4, chr, 4);
+    simple(c, PB_MSG_SET_LAYOUT, payload, 8);
+}
+
+// Expects an error of the given code (and no room-state change in between).
+bool expectError(TestClient &c, uint8_t code) {
+    auto msg = c.waitFor(PB_MSG_ERROR);
+    return msg.size() > 1 && msg[1] == code;
+}
+
 void sendInput(TestClient &c, uint32_t frame, uint8_t value) {
     uint8_t buf[64];
     PbNetWriter w;
@@ -144,6 +199,78 @@ int main(int argc, char **argv) {
     simple(b, PB_MSG_JOIN_ROOM, code, 4);
     state = b.waitFor(PB_MSG_ROOM_STATE);
     CHECK(state.size() > 7 && state[6] == 2, "room shows 2 members after join");
+    a.waitFor(PB_MSG_ROOM_STATE); // Alice's copy of the creation state
+    a.waitFor(PB_MSG_ROOM_STATE); // ...and of Bob's join
+
+    // ---- Seating and characters ----
+    const uint8_t CPU = PB_NET_PORT_CPU, AUTO = PB_NET_CHAR_AUTO, KEEP = PB_NET_KEEP;
+    {
+        // Default: join order, first free characters, CPUs auto-filled (Mario Luigi Peach Yoshi).
+        RoomState st = parseRoomState(state);
+        const uint8_t owner[4] = {idA, idB, CPU, CPU}, chr[4] = {0, 1, 2, 3};
+        CHECK(slotsAre(st, owner, chr), "default seating is join order with Mario/Luigi/Peach/Yoshi");
+        CHECK(st.isAuto[2] && st.isAuto[3] && !st.isAuto[0] && !st.isAuto[1], "CPUs are auto");
+    }
+    choose(b, KEEP, 0);
+    CHECK(expectError(b, PB_ERR_TAKEN), "picking Alice's character is rejected");
+    choose(b, 0, KEEP);
+    CHECK(expectError(b, PB_ERR_TAKEN), "moving onto Alice's port is rejected");
+    choose(b, 3, 5); // Bob moves to P4 as Donkey Kong
+    {
+        RoomState st = parseRoomState(a.waitFor(PB_MSG_ROOM_STATE));
+        const uint8_t owner[4] = {idA, CPU, CPU, idB}, chr[4] = {0, 1, 2, 5};
+        CHECK(slotsAre(st, owner, chr), "Bob is P4 as DK; CPUs refill from the rest");
+        b.waitFor(PB_MSG_ROOM_STATE);
+    }
+    setLayout(b, std::array<uint8_t, 4>{idA, idB, CPU, CPU}.data(), std::array<uint8_t, 4>{0, 1, AUTO, AUTO}.data());
+    CHECK(expectError(b, PB_ERR_NOT_HOST), "only the host can set the layout");
+    setLayout(a, std::array<uint8_t, 4>{idA, idB, CPU, CPU}.data(), std::array<uint8_t, 4>{0, 0, AUTO, AUTO}.data());
+    CHECK(expectError(a, PB_ERR_TAKEN), "layout with a duplicate character is rejected");
+    setLayout(a, std::array<uint8_t, 4>{idA, CPU, CPU, CPU}.data(), std::array<uint8_t, 4>{0, AUTO, AUTO, AUTO}.data());
+    CHECK(expectError(a, PB_ERR_BAD_SETTINGS), "layout without Bob is rejected");
+    setLayout(a, std::array<uint8_t, 4>{idA, CPU, CPU, idA}.data(), std::array<uint8_t, 4>{0, AUTO, AUTO, 1}.data());
+    CHECK(expectError(a, PB_ERR_BAD_SETTINGS), "layout with Alice twice is rejected");
+    setLayout(a, std::array<uint8_t, 4>{CPU, idA, CPU, idB}.data(), std::array<uint8_t, 4>{7, 0, AUTO, 5}.data());
+    {
+        RoomState st = parseRoomState(b.waitFor(PB_MSG_ROOM_STATE));
+        const uint8_t owner[4] = {CPU, idA, CPU, idB}, chr[4] = {7, 0, 1, 5};
+        CHECK(slotsAre(st, owner, chr), "host rearranged: CPU Waluigi P1, Alice P2, auto CPU P3, Bob P4");
+        CHECK(!st.isAuto[0] && st.isAuto[2], "host-picked CPU is not auto");
+        a.waitFor(PB_MSG_ROOM_STATE);
+    }
+    choose(a, KEEP, 7);
+    CHECK(expectError(a, PB_ERR_TAKEN), "a host-picked CPU character can't be taken");
+    choose(a, KEEP, 1); // the auto CPU's character is free to take; the CPU picks another
+    {
+        RoomState st = parseRoomState(a.waitFor(PB_MSG_ROOM_STATE));
+        const uint8_t owner[4] = {CPU, idA, CPU, idB}, chr[4] = {7, 1, 0, 5};
+        CHECK(slotsAre(st, owner, chr), "taking an auto CPU's character re-rolls the CPU");
+        b.waitFor(PB_MSG_ROOM_STATE);
+    }
+    {
+        // A third player takes the lowest CPU port and the first free character, and leaving frees it.
+        TestClient c;
+        CHECK(c.connect(hostname, port), "third client connects");
+        hello(c, "Cara");
+        c.waitFor(PB_MSG_WELCOME);
+        simple(c, PB_MSG_JOIN_ROOM, code, 4);
+        RoomState st = parseRoomState(c.waitFor(PB_MSG_ROOM_STATE));
+        CHECK(st.ok && st.count == 3 && st.owner[0] != CPU && st.chr[0] == 0 && st.owner[2] == CPU,
+              "Cara takes P1 (the lowest CPU port) as Mario");
+        a.waitFor(PB_MSG_ROOM_STATE);
+        b.waitFor(PB_MSG_ROOM_STATE);
+        enet_peer_disconnect(c.peer, 0);
+        c.pump(200);
+        st = parseRoomState(a.waitFor(PB_MSG_ROOM_STATE, 3000));
+        const uint8_t owner[4] = {CPU, idA, CPU, idB}, chr[4] = {0, 1, 2, 5};
+        CHECK(slotsAre(st, owner, chr) && st.isAuto[0], "Cara's port returns to an auto CPU");
+        b.waitFor(PB_MSG_ROOM_STATE, 3000);
+        enet_host_destroy(c.host);
+    }
+    // Back to Alice P1, Bob P2 for the lockstep checks below, with a host-picked CPU on P4.
+    setLayout(a, std::array<uint8_t, 4>{idA, idB, CPU, CPU}.data(), std::array<uint8_t, 4>{6, 1, AUTO, 0}.data());
+    a.waitFor(PB_MSG_ROOM_STATE);
+    b.waitFor(PB_MSG_ROOM_STATE);
 
     // Only the host may start.
     PbNetSettings s{};
@@ -152,8 +279,9 @@ int main(int argc, char **argv) {
     s.turns = 10;
     s.cpuLevel = 1;
     s.inputDelay = 4;
-    s.chars[0] = 0; s.chars[1] = 1; s.chars[2] = 2; s.chars[3] = 3;
-    s.portOwner[0] = idA; s.portOwner[1] = idB; s.portOwner[2] = PB_NET_PORT_CPU; s.portOwner[3] = PB_NET_PORT_CPU;
+    // Deliberately wrong: the server must use the lobby's seating instead.
+    s.chars[0] = 3; s.chars[1] = 3; s.chars[2] = 3; s.chars[3] = 3;
+    s.portOwner[0] = idB; s.portOwner[1] = idB; s.portOwner[2] = idB; s.portOwner[3] = idB;
     uint8_t sbuf[64];
     PbNetWriter sw;
     pbw_init(&sw, sbuf, sizeof(sbuf));
@@ -164,6 +292,18 @@ int main(int argc, char **argv) {
     auto startA = a.waitFor(PB_MSG_GAME_START);
     auto startB = b.waitFor(PB_MSG_GAME_START);
     CHECK(!startA.empty() && startA == startB, "both clients get identical GAME_START");
+    if (!startA.empty()) {
+        PbNetReader r;
+        PbNetSettings got;
+        pbr_init(&r, startA.data() + 1, startA.size() - 1);
+        pbr_settings(&r, &got);
+        const uint8_t owner[4] = {idA, idB, CPU, CPU}, chr[4] = {6, 1, 2, 0};
+        CHECK(!r.error && std::memcmp(got.portOwner, owner, 4) == 0 && std::memcmp(got.chars, chr, 4) == 0,
+              "GAME_START carries the lobby's seating (Daisy, Luigi, auto Peach, Mario)");
+        CHECK(got.seed == 1234 && got.turns == 10, "GAME_START keeps the host's game options");
+    }
+    choose(b, KEEP, 4);
+    CHECK(expectError(b, PB_ERR_IN_GAME), "no character changes mid-game");
 
     // Lockstep: a frame is only released once both players' inputs arrive.
     sendInput(a, 0, 0xA1);
