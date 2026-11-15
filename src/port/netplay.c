@@ -400,6 +400,39 @@ int partyboard_netplay_lobby(void)
 
 // ---- in game ----
 
+// Gives each local controller slot this client plays with (1, or 1 and 2, ...) a gamepad if it has
+// none, so a fresh install works without visiting Settings. Keyboard bindings don't count: port 1
+// has default keyboard bindings, and a gamepad works alongside them.
+static void ensure_local_controllers(void)
+{
+    u32 slot;
+    u32 slots = 0;
+    int port;
+    for (port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+        slots += (sOwnedMask >> port) & 1;
+    }
+    for (slot = 0; slot < slots; slot++) {
+        u32 index;
+        if (PADGetIndexForPort(slot) >= 0) {
+            continue;
+        }
+        for (index = 0; index < PADCount(); index++) {
+            int taken = 0;
+            u32 other;
+            for (other = 0; other < PAD_MAX_CONTROLLERS; other++) {
+                taken |= PADGetIndexForPort(other) == (s32)index;
+            }
+            if (!taken) {
+                const char *name = PADGetNameForControllerIndex(index);
+                PADSetPortForIndex(index, slot);
+                printf("[netplay] using '%s' as your controller %u\n", name ? name : "gamepad", slot + 1);
+                fflush(stdout);
+                break;
+            }
+        }
+    }
+}
+
 u32 partyboard_netplay_pad_read(PADStatus *status)
 {
     PADStatus local[PB_NET_MAX_PLAYERS];
@@ -426,6 +459,22 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
         sPrimed = 1;
     }
 
+    if (sFrame % 60 == 0) {
+        ensure_local_controllers();
+    }
+    if (sFrame == 120) { // ~2 s in: SDL reports connected gamepads as events once the game loop runs
+        u32 index;
+        const s32 mine = PADGetIndexForPort(0);
+        printf("[netplay] gamepads connected: %u\n", PADCount());
+        for (index = 0; index < PADCount(); index++) {
+            const char *name = PADGetNameForControllerIndex(index);
+            printf("[netplay]   %u: %s%s\n", index, name ? name : "?", (s32)index == mine ? "  <- your controller 1" : "");
+        }
+        if (mine < 0) {
+            printf("[netplay] no gamepad on your controller 1; keyboard bindings only\n");
+        }
+        fflush(stdout);
+    }
     PADRead(local);
     send_input(sFrame + sSettings.inputDelay, local);
 

@@ -265,8 +265,9 @@ void Overlay::update()
     }
 
     u32 buttonCount;
-    // Quickstart games are all CPU players, so a missing controller doesn't matter.
-    const bool showControllerWarning = !partyboard_autotest_quickstart() && PADGetIndexForPort(PAD_CHAN0) < 0 && PADGetKeyButtonBindings(PAD_CHAN0, &buttonCount) == nullptr
+    // All-CPU quickstart runs don't need a controller; any game with a human (local or online) does.
+    const bool showControllerWarning = (!partyboard_autotest_quickstart() || partyboard_autotest_get()->humanMask != 0)
+        && PADGetIndexForPort(PAD_CHAN0) < 0 && PADGetKeyButtonBindings(PAD_CHAN0, &buttonCount) == nullptr
         && dynamic_cast<Window *>(top_document()) == nullptr && dynamic_cast<WindowSmall *>(top_document()) == nullptr;
     if (showControllerWarning && mControllerWarning == nullptr) {
         mControllerWarning = create_controller_warning(mDocument);
