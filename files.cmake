@@ -90,6 +90,7 @@ set(PORT_FILES
         src/port/audio.cpp
         src/port/autotest.c
         src/port/inputsync.c
+        src/port/netplay.c
         src/port/byteswap.cpp
         src/port/config.cpp
         src/port/crashhandler.cpp

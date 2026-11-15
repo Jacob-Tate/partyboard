@@ -7,6 +7,8 @@
 #include "game/saveload.h"
 #include "port/inputsync.h"
 #include "port/main.h"
+#include "port/netplay.h"
+#include "netplay/protocol.h"
 
 #include <SDL3/SDL_timer.h>
 #include <stdio.h>
@@ -23,6 +25,7 @@ static PartyBoardAutotest sAutotest = {
     { 0, 1, 2, 3 }, // chars
     1,              // cpuLevel
     0,              // humans
+    0,              // humanMask
     0,              // seedSet
     0,              // seed
     0,              // fast
@@ -161,6 +164,7 @@ int partyboard_autotest_parse(int argc, char *argv[])
         } else if (strcmp(arg, "--humans") == 0 && next) {
             if (parse_int(next, 0, 4, &value)) {
                 sAutotest.humans = value;
+                sAutotest.humanMask = (1 << value) - 1;
             } else {
                 fprintf(stderr, "[autotest] --humans expects 0-4, got '%s'\n", next);
                 ok = 0;
@@ -245,6 +249,18 @@ void partyboard_autotest_configure_replay(unsigned int seed, int board, int turn
     memcpy(sAutotest.chars, chars, sizeof(sAutotest.chars));
     sAutotest.cpuLevel = cpuLevel;
     sAutotest.humans = humans;
+    sAutotest.humanMask = (1 << humans) - 1;
+}
+
+void partyboard_autotest_configure_netplay(unsigned int seed, int board, int turns, const int chars[4], int cpuLevel,
+    int humanMask)
+{
+    int i;
+    partyboard_autotest_configure_replay(seed, board, turns, chars, cpuLevel, 0);
+    sAutotest.humanMask = humanMask;
+    for (i = 0; i < 4; i++) {
+        sAutotest.humans += (humanMask >> i) & 1;
+    }
 }
 
 int partyboard_autotest_seeded(void)
@@ -277,7 +293,7 @@ void partyboard_autotest_setup_party(void)
         GWPlayerCfg[i].pad_idx = i;
         GWPlayerCfg[i].diff = sAutotest.cpuLevel;
         GWPlayerCfg[i].group = 0;
-        GWPlayerCfg[i].iscom = (i < sAutotest.humans) ? 0 : 1;
+        GWPlayerCfg[i].iscom = (sAutotest.humanMask & (1 << i)) ? 0 : 1;
     }
     GWMessSpeedSet(0);
     GWMGExplainSet(0);
@@ -312,6 +328,18 @@ int partyboard_autotest_next_game(void)
 
 void partyboard_autotest_frame_end(void)
 {
+    if (partyboard_netplay_active() && GlobalCounter % PB_NET_CHECKSUM_INTERVAL == 0) {
+        u32 hash = 2166136261u;
+        u32 seeds[3];
+        seeds[0] = frand_seed_get();
+        seeds[1] = (u32)rnd_seed;
+        seeds[2] = boardRandSeed;
+        hash = hash_bytes(hash, seeds, sizeof(seeds));
+        hash = hash_bytes(hash, &GWSystem, sizeof(GWSystem));
+        hash = hash_bytes(hash, GWPlayer, sizeof(GWPlayer));
+        hash = hash_bytes(hash, GWPlayerCfg, sizeof(GWPlayerCfg));
+        partyboard_netplay_checksum(GlobalCounter, hash);
+    }
     if (sChecksumLog) {
         u32 sys = hash_bytes(2166136261u, &GWSystem, sizeof(GWSystem));
         u32 players = hash_bytes(2166136261u, GWPlayer, sizeof(GWPlayer));

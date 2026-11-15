@@ -30,6 +30,7 @@ typedef struct PartyBoardAutotest {
     int chars[4];
     int cpuLevel;
     int humans;
+    int humanMask; // bit per player port that a human controls (from --humans or netplay)
     int seedSet;
     unsigned int seed;
     int fast;
@@ -55,6 +56,9 @@ unsigned int partyboard_autotest_frame_seed(void);
 // Gives up the CPU briefly while spin-waiting on a worker thread.
 void partyboard_autotest_yield(void);
 void partyboard_autotest_setup_party(void);
+// Applies netplay game settings; humanMask has a bit per human-controlled port.
+void partyboard_autotest_configure_netplay(unsigned int seed, int board, int turns, const int chars[4], int cpuLevel,
+    int humanMask);
 // Applies the game settings stored in an input recording (implies --quickstart and --seed).
 void partyboard_autotest_configure_replay(unsigned int seed, int board, int turns, const int chars[4], int cpuLevel,
     int humans);

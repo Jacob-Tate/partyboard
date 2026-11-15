@@ -2,6 +2,7 @@
 
 #include "port/autotest.h"
 #include "port/main.h"
+#include "port/netplay.h"
 
 #include <dolphin/pad.h>
 #include <stdio.h>
@@ -91,6 +92,9 @@ int partyboard_input_open(const char *recordPath, const char *replayPath)
 u32 partyboard_input_pad_read(PADStatus *status)
 {
     u32 result;
+    if (partyboard_netplay_active()) {
+        return partyboard_netplay_pad_read(status);
+    }
     if (sMode == INPUT_REPLAY) {
         if (!sReplayEnded && fread(&result, sizeof(result), 1, sFile) == 1
             && fread(status, sizeof(PADStatus), PAD_MAX_CONTROLLERS, sFile) == PAD_MAX_CONTROLLERS) {
@@ -118,7 +122,7 @@ u32 partyboard_input_pad_read(PADStatus *status)
 
 int partyboard_input_is_synced(void)
 {
-    return sMode != INPUT_LIVE;
+    return sMode != INPUT_LIVE || partyboard_netplay_active();
 }
 
 void partyboard_input_close(void)

@@ -100,6 +100,13 @@ FetchContent_Declare(json
 )
 FetchContent_MakeAvailable(json)
 
+# ENet: UDP transport for netplay (same version as the relay server in server/).
+FetchContent_Declare(enet
+        GIT_REPOSITORY https://github.com/lsalzman/enet.git
+        GIT_TAG v1.3.18
+        GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(enet)
+
 set(VERSION 1)
 set(PARTY_BOARD_BUNDLE_NAME PartyBoard)
 set(PARTY_BOARD_BUNDLE_IDENTIFIER com.mariopartyrd.partyboard)
@@ -169,10 +176,12 @@ if (MSVC AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
 endif ()
 set_target_properties(dol PROPERTIES C_VISIBILITY_PRESET default CXX_VISIBILITY_PRESET default)
 if (WIN32)
-    target_link_libraries(dol PRIVATE dbghelp)
+    target_link_libraries(dol PRIVATE dbghelp ws2_32 winmm)
 endif ()
 target_compile_definitions(dol PRIVATE TARGET_PC NON_MATCHING OPTIMIZED_TEXTURE_LOADING BYTESWAPPING TARGET_DOL VERSION=${VERSION})
 target_include_directories(dol PRIVATE include extern extern/aurora/include extern/aurora/include/dolphin ${CMAKE_BINARY_DIR})
+target_link_libraries(dol PRIVATE enet)
+target_include_directories(dol PRIVATE ${enet_SOURCE_DIR}/include)
 target_link_libraries(dol PUBLIC aurora::core aurora::card aurora::dvd aurora::gx aurora::mtx aurora::os aurora::si aurora::vi aurora::pad musyx absl::flat_hash_map nlohmann_json::nlohmann_json fmt::fmt rmlui_debugger)
 # TODO it doesn't work on Linux yet
 if (WIN32)

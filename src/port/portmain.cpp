@@ -21,6 +21,7 @@
 #include <port/audio.h>
 #include <port/autotest.h>
 #include <port/crashhandler.h>
+#include <port/netplay.h>
 #include <port/config.hpp>
 #include <port/dolassets.h>
 #include <port/main.h>
@@ -398,7 +399,12 @@ extern "C" int port_main(int argc, char* argv[]) {
     }
 
     partyboard::config::LoadFromUserPreferences();
-    if (!partyboard_autotest_parse(argc, argv)) {
+    if (!partyboard_autotest_parse(argc, argv) || !partyboard_netplay_parse(argc, argv)) {
+        return 1;
+    }
+    // Online: run the console lobby before the window opens; returns once the game starts.
+    if (partyboard_netplay_requested() && !partyboard_netplay_lobby()) {
+        partyboard_netplay_shutdown();
         return 1;
     }
     const PartyBoardAutotest* autotest = partyboard_autotest_get();
@@ -425,7 +431,8 @@ extern "C" int port_main(int argc, char* argv[]) {
         config.mem1Size = 64 * 1024 * 1024;
         config.mem2Size = 24 * 1024 * 1024;
         config.allowJoystickBackgroundEvents = partyboard::getSettings().game.allowBackgroundInput;
-        config.pauseOnFocusLost = partyboard::getSettings().game.pauseOnFocusLost;
+        // Online, one paused window would stall every player in lockstep.
+        config.pauseOnFocusLost = partyboard::getSettings().game.pauseOnFocusLost && !partyboard_netplay_active();
         // config.imGuiInitCallback = &aurora_imgui_init_callback;
         config.allowTextureDumps = false;
         auroraInfo = aurora_initialize(argc, argv, &config);
@@ -560,6 +567,7 @@ extern "C" int port_main(int argc, char* argv[]) {
     game_main();
 
     partyboard_autotest_shutdown();
+    partyboard_netplay_shutdown();
 
     partyboard_audio_shutdown();
 
