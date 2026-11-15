@@ -428,14 +428,23 @@ int partyboard_netplay_begin(const char *server, const char *name, int create, c
     return 1;
 }
 
+// Name of the person on each port when the game started ("" for CPU ports), for in-game name tags.
+static char sPortNames[PB_NET_MAX_PLAYERS][PB_NET_MAX_NAME + 1];
+
 static void finalize_start(void)
 {
-    int i;
+    int i, m;
     int chars[PB_NET_MAX_PLAYERS];
     // Game settings from the server: same on every machine.
     sHumanMask = 0;
     sOwnedMask = 0;
     for (i = 0; i < PB_NET_MAX_PLAYERS; i++) {
+        sPortNames[i][0] = '\0';
+        for (m = 0; m < sRoomCount; m++) {
+            if (sSettings.portOwner[i] != PB_NET_PORT_CPU && sRoomIds[m] == sSettings.portOwner[i]) {
+                snprintf(sPortNames[i], sizeof(sPortNames[i]), "%s", sRoomNames[m]);
+            }
+        }
         chars[i] = sSettings.chars[i];
         if (sSettings.portOwner[i] != PB_NET_PORT_CPU) {
             sHumanMask |= (u8)(1 << i);
@@ -651,6 +660,11 @@ int partyboard_netplay_my_port(void)
 const char *partyboard_netplay_notice(void)
 {
     return sNotice;
+}
+
+const char *partyboard_netplay_port_name(int port)
+{
+    return (sActive && port >= 0 && port < PB_NET_MAX_PLAYERS) ? sPortNames[port] : "";
 }
 
 const char *partyboard_netplay_char_name(int character)

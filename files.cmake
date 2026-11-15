@@ -143,6 +143,7 @@ set(PORT_FILES
         src/port/ui/online.hpp
         src/port/ui/portraits.cpp
         src/port/ui/portraits.hpp
+        src/port/nametag.cpp
         src/port/ui/preset.cpp
         src/port/ui/preset.hpp
         src/port/ui/select_button.cpp

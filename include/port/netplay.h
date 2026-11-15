@@ -59,6 +59,8 @@ int partyboard_netplay_slot_auto(int port);  // 1 for a CPU whose character the 
 const char *partyboard_netplay_slot_name(int port); // player name or "CPU"
 const char *partyboard_netplay_notice(void); // last rejected request, "" if none
 const char *partyboard_netplay_char_name(int character);
+// During an online game: the name of the person who started on a port, "" for CPU ports.
+const char *partyboard_netplay_port_name(int port);
 // Leaves the room and disconnects (not once the game has started).
 void partyboard_netplay_leave(void);
 PbNetLobbyState partyboard_netplay_state(void);

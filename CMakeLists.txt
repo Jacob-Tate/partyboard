@@ -180,7 +180,7 @@ if (WIN32)
 endif ()
 target_compile_definitions(dol PRIVATE TARGET_PC NON_MATCHING OPTIMIZED_TEXTURE_LOADING BYTESWAPPING TARGET_DOL VERSION=${VERSION})
 target_include_directories(dol PRIVATE include extern extern/aurora/include extern/aurora/include/dolphin ${CMAKE_BINARY_DIR})
-target_link_libraries(dol PRIVATE enet)
+target_link_libraries(dol PRIVATE enet freetype)
 target_include_directories(dol PRIVATE ${enet_SOURCE_DIR}/include)
 target_link_libraries(dol PUBLIC aurora::core aurora::card aurora::dvd aurora::gx aurora::mtx aurora::os aurora::si aurora::vi aurora::pad musyx absl::flat_hash_map nlohmann_json::nlohmann_json fmt::fmt rmlui_debugger)
 # TODO it doesn't work on Linux yet

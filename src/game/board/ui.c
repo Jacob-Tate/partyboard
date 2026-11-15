@@ -23,6 +23,10 @@
 #include "ext_math.h"
 #include <string.h>
 
+#ifdef TARGET_PC
+#include "port/nametag.h"
+#endif
+
 typedef struct {
     /* 0x00 */ struct {
         u8 unk00_bit0 : 1;
@@ -165,6 +169,12 @@ static s16 itemPickupMdlId = -1;
 static s16 yourTurnSprGrp = -1;
 
 static UnkUiStatusStruct uiStatus[4] = { 0 };
+
+#ifdef TARGET_PC
+// Online games: status-box member 0x10 shows the player's name where the COM tag goes.
+#define STATUS_NAMETAG 0x10
+static s8 statusHasNameTag[4];
+#endif
 
 static s32 statusSprTbl[11] = { DATA_MAKE_NUM(DATADIR_BOARD, 0x27), DATA_MAKE_NUM(DATADIR_BOARD, 0x26), DATA_MAKE_NUM(DATADIR_BOARD, 0x29),
     DATA_MAKE_NUM(DATADIR_BOARD, 0x28), DATA_MAKE_NUM(DATADIR_BOARD, 0x28), DATA_MAKE_NUM(DATADIR_BOARD, 0x28), DATA_MAKE_NUM(DATADIR_BOARD, 0x2D),
@@ -513,6 +523,20 @@ static void CreateBoardStatusSprite(s32 arg0, UnkUiStatusStruct *arg1)
         HuSprAttrSet(arg1->unk02, i + 0xD, 1);
         HuSprAttrSet(arg1->unk02, i + 0xD, 8);
     }
+#ifdef TARGET_PC
+    statusHasNameTag[arg0] = 0;
+    {
+        ANIMDATA *nameTag = partyboard_nametag_anim(arg0);
+        if (nameTag) {
+            sp8 = HuSprCreate(nameTag, 0x5DC, 0);
+            HuSprGrpMemberSet(arg1->unk02, STATUS_NAMETAG, sp8);
+            HuSprAttrSet(arg1->unk02, STATUS_NAMETAG, HUSPR_ATTR_LINEAR);
+            HuSprScaleSet(arg1->unk02, STATUS_NAMETAG, 1.0f / PARTYBOARD_NAMETAG_SCALE, 1.0f / PARTYBOARD_NAMETAG_SCALE);
+            HuSprPosSet(arg1->unk02, STATUS_NAMETAG, statusSprPosTbl[12][0], statusSprPosTbl[12][1]);
+            statusHasNameTag[arg0] = 1;
+        }
+    }
+#endif
     arg1->unk00_bit6 = 0;
     HuSprTPLvlSet(arg1->unk02, 0, 0.7f);
     if (GWBoardGet() == BOARD_ID_EXTRA1 || GWBoardGet() == BOARD_ID_EXTRA2) {
@@ -573,6 +597,17 @@ static s32 UpdateBoardStatus(void)
         else {
             HuSprAttrSet(temp_r31->unk02, 0xC, HUSPR_ATTR_DISPOFF);
         }
+#ifdef TARGET_PC
+        // The name shows while a person plays this slot; a CPU that took over gets the COM tag.
+        if (statusHasNameTag[i]) {
+            if (GWPlayer[i].com) {
+                HuSprAttrSet(temp_r31->unk02, STATUS_NAMETAG, HUSPR_ATTR_DISPOFF);
+            }
+            else {
+                HuSprAttrReset(temp_r31->unk02, STATUS_NAMETAG, HUSPR_ATTR_DISPOFF);
+            }
+        }
+#endif
         temp_r28 = statusColTbl[GWPlayer[i].color];
         HuSprColorSet(temp_r31->unk02, 0, temp_r28[0], temp_r28[1], temp_r28[2]);
         MoveBoardStatus(i);

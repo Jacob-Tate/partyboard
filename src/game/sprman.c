@@ -462,7 +462,8 @@ void HuSprAnimKill(ANIMDATA *anim)
 #ifdef OPTIMIZED_TEXTURE_LOADING
         int i;
         int j;
-        for(i=0; i<anim->bmpNum; i++) {
+        // Mask off ANIM_BMP_ALLOC: a HuSprAnimMake animation has bmpNum 0x8001 but one bitmap.
+        for(i=0; i<(anim->bmpNum & ANIM_BMP_NUM_MASK); i++) {
             for (j = 0; j < sizeof(anim->bmp[0].texData) / sizeof(anim->bmp[0].texData[0]); j++) {
                 AnimTexData *tex = &anim->bmp[i].texData[j];
                 if (tex->tex_initialized) {
