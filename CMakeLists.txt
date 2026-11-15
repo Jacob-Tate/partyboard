@@ -162,6 +162,11 @@ source_group("Game" FILES ${GAME_FILES})
 source_group("Port" FILES ${PORT_FILES})
 
 add_library(dol SHARED ${GAME_FILES} ${PORT_FILES} extern/libco/libco.c)
+if (MSVC AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    # clang-cl leaves __STDC__ undefined, so libco's settings.h never defines alignas for C.
+    set_source_files_properties(extern/libco/libco.c PROPERTIES
+        COMPILE_OPTIONS "/FI${CMAKE_CURRENT_SOURCE_DIR}/include/port/libco_clangcl.h")
+endif ()
 set_target_properties(dol PROPERTIES C_VISIBILITY_PRESET default CXX_VISIBILITY_PRESET default)
 target_compile_definitions(dol PRIVATE TARGET_PC NON_MATCHING OPTIMIZED_TEXTURE_LOADING BYTESWAPPING TARGET_DOL VERSION=${VERSION})
 target_include_directories(dol PRIVATE include extern extern/aurora/include extern/aurora/include/dolphin ${CMAKE_BINARY_DIR})
