@@ -5,6 +5,8 @@
 #include "game/gamework_data.h"
 #include "game/object.h"
 #include "game/saveload.h"
+#include "game/board/mg_setup.h"
+#include "port/byteswap.h"
 #include "port/inputsync.h"
 #include "port/main.h"
 #include "port/netplay.h"
@@ -284,10 +286,62 @@ void partyboard_autotest_yield(void)
     SDL_Delay(0);
 }
 
+// A continued online game's saved board state (GWSystem + GWPlayer[4], GameCube byte order), 0 bytes for a new game.
+static u8 sContinueState[PB_NET_MAX_CONTINUE_STATE];
+static int sContinueSize = 0;
+
+void partyboard_autotest_set_continue_state(const unsigned char *state, int size)
+{
+    sContinueSize = (state && size > 0 && size <= (int)sizeof(sContinueState)) ? size : 0;
+    if (sContinueSize) {
+        memcpy(sContinueState, state, sContinueSize);
+    }
+}
+
+// A continue: what mentDll's party Continue does (SLLoadBoard), from the online save's state, then today's seating.
+static void setup_continue(void)
+{
+    s32 i;
+    memcpy(&GWSystem, sContinueState, sizeof(SystemState));
+    byteswap_systemstate(&GWSystem);
+    for (i = 0; i < 4; i++) {
+        int human;
+        memcpy(&GWPlayer[i], sContinueState + sizeof(SystemState) + i * sizeof(PlayerState), sizeof(PlayerState));
+        byteswap_playerstate(&GWPlayer[i]);
+        // The records are in turn order; each keeps the seat (lockstep pad) it plays. Whoever sits in that seat now
+        // decides human or CPU.
+        human = (sAutotest.humanMask >> (GWPlayer[i].port & 3)) & 1;
+        GWPlayer[i].com = human ? 0 : 1;
+        if (!human) {
+            GWPlayer[i].diff = sAutotest.cpuLevel;
+        }
+        GWPlayerCfg[i].character = GWPlayer[i].character;
+        GWPlayerCfg[i].pad_idx = GWPlayer[i].port;
+        GWPlayerCfg[i].diff = GWPlayer[i].diff;
+        GWPlayerCfg[i].iscom = GWPlayer[i].com;
+        GWPlayerCfg[i].group = GWPlayer[i].team;
+    }
+    GWMessSpeedSet(1);
+    GWMGExplainSet(1);
+    SLSaveFlagSet(0);
+    // A continued board keeps its flags, so it doesn't clear the recently played minigames (board/main.c): those
+    // are whatever this process played before. Clear them, as a console's Continue after power-on has them.
+    BoardMGSetupPlayClear();
+    for (i = 0; i < 4; i++) {
+        CharMotionInit(GWPlayerCfg[i].character);
+    }
+    printf("[autotest] continuing: board %d, turn %d of %d\n", GWSystem.board, GWSystem.turn, GWSystem.max_turn);
+    fflush(stdout);
+}
+
 // Mirrors what party mode (mentDll) does before calling the board overlay.
 void partyboard_autotest_setup_party(void)
 {
     s32 i;
+    if (sContinueSize == (int)(sizeof(SystemState) + 4 * sizeof(PlayerState))) {
+        setup_continue();
+        return;
+    }
     BoardPartyConfigSet(0, 1, 0, sAutotest.turns, 0, 0, 0, 0);
     for (i = 0; i < 4; i++) {
         GWPlayerCfg[i].character = sAutotest.chars[i];

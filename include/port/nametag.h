@@ -13,9 +13,10 @@ extern "C" {
 // Textures are drawn at this many texels per screen unit; draw the sprite at 1/scale.
 #define PARTYBOARD_NAMETAG_SCALE 3
 
-// A sprite animation (on HEAP_DATA, freed with the sprite) showing the online name of the player on
-// `port`, or NULL if this isn't an online game, the port is a CPU, or the font can't be loaded.
-ANIMDATA *partyboard_nametag_anim(int port);
+// A sprite animation (on HEAP_DATA, freed with the sprite) showing the online name of player record `player`
+// (GWPlayer index; its seat is GWPlayerCfg[player].pad_idx), or NULL if this isn't an online game, the seat is a
+// CPU, or the font can't be loaded.
+ANIMDATA *partyboard_nametag_anim(int player);
 
 #ifdef __cplusplus
 }

@@ -4,6 +4,7 @@
 #include "pane.hpp"
 #include "port/config.hpp"
 #include "port/netplay.h"
+#include "port/online_save.h"
 #include "port/settings.h"
 #include "portraits.hpp"
 #include "string_button.hpp"
@@ -13,6 +14,8 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
+#include <ctime>
+#include <vector>
 #include <functional>
 #include <string>
 #include <utility>
@@ -165,6 +168,47 @@ namespace {
         return in_room() && partyboard_netplay_is_host();
     }
 
+    // The online save the next hosted room continues (Host a Game > Saved Game), or nullptr for a new game.
+    const PbOnlineSave *continuing_save()
+    {
+        return partyboard_netplay_pending_continue();
+    }
+
+    Rml::String save_date(u64 when)
+    {
+        const std::time_t t = static_cast<std::time_t>(when);
+        std::tm local {};
+        localtime_s(&local, &t);
+        char buf[32];
+        std::strftime(buf, sizeof(buf), "%b %d, %H:%M", &local);
+        return buf;
+    }
+
+    // "Toad's Midway Madness, turn 4/10"
+    Rml::String save_title(const PbOnlineSave &save)
+    {
+        return Rml::String(kBoardNames[save.board < 6 ? save.board : 0]) + ", turn " + std::to_string(save.resumeTurn) +
+            "/" + std::to_string(save.maxTurns);
+    }
+
+    // "Jacob, Sam and 2 CPUs - Nov 15, 03:43"
+    Rml::String save_players(const PbOnlineSave &save)
+    {
+        Rml::String names;
+        int cpus = 0;
+        for (int i = 0; i < 4; i++) {
+            if (!save.wasHuman[i]) {
+                cpus++;
+                continue;
+            }
+            names += (names.empty() ? "" : ", ") + Rml::String(save.names[i]);
+        }
+        if (cpus) {
+            names += (names.empty() ? "" : " and ") + std::to_string(cpus) + (cpus == 1 ? " CPU" : " CPUs");
+        }
+        return names + " - " + save_date(save.updated);
+    }
+
     Rml::String char_name(int character)
     {
         return partyboard_netplay_char_name(character);
@@ -190,6 +234,10 @@ namespace {
             char_name(partyboard_netplay_slot_char(port));
         if (partyboard_netplay_slot_auto(port)) {
             text += " (auto)";
+        }
+        const char *saved = partyboard_netplay_saved_name(port);
+        if (partyboard_netplay_slot_owner(port) == kCpu && saved[0]) {
+            text += Rml::String("  (") + saved + "'s seat)";
         }
         if (port == partyboard_netplay_my_port()) {
             text += "  (you)";
@@ -331,11 +379,48 @@ OnlineWindow::OnlineWindow()
         // ---- Host ----
         leftPane.add_section("Host a Game");
         leftPane.register_control(leftPane.add_select_button({
+                                      .key = "Saved Game",
+                                      .getValue = [] {
+                                          const PbOnlineSave *save = continuing_save();
+                                          return save ? save_title(*save) : Rml::String("New game");
+                                      },
+                                  }),
+            rightPane, [](Pane &pane) {
+                pane.add_rml("Start a new party, or continue an online party that was interrupted. The host's "
+                             "game saves after every minigame; a continue starts from the last one.<br/><br/>"
+                             "Everyone gets their seat back by joining with the same name; anyone else can take a "
+                             "CPU's seat. Seats nobody takes stay CPUs.");
+                pane.add_button({
+                                    .text = "New game",
+                                    .isSelected = [] { return continuing_save() == nullptr; },
+                                })
+                    .on_pressed([] { partyboard_netplay_set_continue(nullptr); });
+                static std::vector<PbOnlineSave> saves;
+                saves.assign(32, PbOnlineSave {});
+                saves.resize(partyboard_online_save_list(saves.data(), static_cast<int>(saves.size())));
+                if (saves.empty()) {
+                    pane.add_rml("<br/>No interrupted online parties saved on this PC (with this build).");
+                }
+                for (size_t i = 0; i < saves.size(); i++) {
+                    const std::string path = saves[i].path;
+                    pane.add_button({
+                                        .text = save_title(saves[i]) + "  -  " + save_players(saves[i]),
+                                        .isSelected = [path] {
+                                            const PbOnlineSave *save = continuing_save();
+                                            return save && path == save->path;
+                                        },
+                                    })
+                        .on_pressed([i] { partyboard_netplay_set_continue(&saves[i]); });
+                }
+            });
+        leftPane.register_control(leftPane.add_select_button({
                                       .key = "Board",
                                       .getValue = [] {
-                                          const int board = getSettings().netplay.board.getValue();
+                                          const PbOnlineSave *save = continuing_save();
+                                          const int board = save ? save->board : getSettings().netplay.board.getValue();
                                           return Rml::String(kBoardNames[board >= 0 && board < 6 ? board : 0]);
                                       },
+                                      .isDisabled = [] { return continuing_save() != nullptr; },
                                   }),
             rightPane, [](Pane &pane) {
                 const bool pictures = portraits::ensure_boards_loaded();
@@ -357,11 +442,15 @@ OnlineWindow::OnlineWindow()
             });
         leftPane.register_control(leftPane.add_child<NumberButton>(NumberButton::Props {
                                       .key = "Turns",
-                                      .getValue = [] { return getSettings().netplay.turns.getValue(); },
+                                      .getValue = [] {
+                                          const PbOnlineSave *save = continuing_save();
+                                          return save ? static_cast<int>(save->maxTurns) : getSettings().netplay.turns.getValue();
+                                      },
                                       .setValue = [](int value) {
                                           getSettings().netplay.turns.setValue(value);
                                           save();
                                       },
+                                      .isDisabled = [] { return continuing_save() != nullptr; },
                                       .min = 10,
                                       .max = 50,
                                       .step = 5,
@@ -470,6 +559,7 @@ OnlineWindow::OnlineWindow()
                                           const int c = my_char();
                                           return c >= 0 ? char_name(c) : Rml::String("Any");
                                       },
+                                      .isDisabled = [] { return partyboard_netplay_room_continuing() != 0; },
                                   }),
             rightPane, [](Pane &pane) {
                 const bool pictures = portraits::ensure_loaded();

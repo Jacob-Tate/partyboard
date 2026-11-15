@@ -58,6 +58,8 @@ unsigned int partyboard_autotest_frame_seed(void);
 void partyboard_autotest_yield(void);
 void partyboard_autotest_setup_party(void);
 // Applies netplay game settings; humanMask has a bit per human-controlled port.
+// A continued online game: the saved board state the next game starts from (NULL/0: a new party).
+void partyboard_autotest_set_continue_state(const unsigned char *state, int size);
 void partyboard_autotest_configure_netplay(unsigned int seed, int board, int turns, const int chars[4], int cpuLevel,
     int humanMask);
 // Applies the game settings stored in an input recording (implies --quickstart and --seed).

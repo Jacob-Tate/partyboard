@@ -19,7 +19,7 @@
 extern "C" {
 #endif
 
-#define PB_NET_PROTOCOL_VERSION 3
+#define PB_NET_PROTOCOL_VERSION 4
 #define PB_NET_DEFAULT_PORT 7845
 #define PB_NET_CHANNEL_CONTROL 0
 #define PB_NET_CHANNEL_INPUT 1
@@ -34,6 +34,7 @@ extern "C" {
 #define PB_NET_CHAR_AUTO 0xFF      // CPU slot: take the first character nobody else has
 #define PB_NET_KEEP 0xFF           // CHOOSE: leave this field unchanged
 #define PB_NET_CHECKSUM_INTERVAL 60 // clients report a checksum every this many frames
+#define PB_NET_MAX_CONTINUE_STATE 1024 // bytes of saved board state a continued game starts from
 
 typedef enum PbNetMsg {
     // client -> server
@@ -42,7 +43,9 @@ typedef enum PbNetMsg {
     PB_MSG_JOIN_ROOM = 3,   // char code[4]
     PB_MSG_LEAVE_ROOM = 4,  // (empty)
     // PbNetSettings (host only). chars and portOwner are ignored: the server fills them in from the
-    // room's slots, so what everyone saw in the lobby is what they play.
+    // room's slots, so what everyone saw in the lobby is what they play. Then u16 stateSize and that many
+    // bytes: the saved board state a continued game starts from (0 for a new game; at most
+    // PB_NET_MAX_CONTINUE_STATE).
     PB_MSG_START_GAME = 5,
     PB_MSG_INPUT = 6,       // u32 frame, then u8 pad[padSize] for each port this client owns, in port order
     PB_MSG_CHECKSUM = 7,    // u32 frame, u32 hash
@@ -56,15 +59,22 @@ typedef enum PbNetMsg {
     // u8 char[4] (0-7; CPU slots may use PB_NET_CHAR_AUTO). Every room member must own exactly one
     // port and the explicit characters must be distinct.
     PB_MSG_SET_LAYOUT = 9,
+    // Host only, before the game: make this a continued game (or a new one again). u8 enabled; if 1,
+    // 4 x (u8 char, u8 wasHuman, str name) from the save. The characters then stay with their ports;
+    // everyone is reseated: a person whose name matches a seat that was human gets it back, others take
+    // the lowest free seat. Later joiners are seated the same way. CHOOSE may move to a free port but
+    // not change character, and SET_LAYOUT may only rearrange people.
+    PB_MSG_SET_CONTINUE = 10,
 
     // server -> client
     PB_MSG_WELCOME = 64,     // u8 clientId
     PB_MSG_ERROR = 65,       // u8 PbNetError, str message
     // char code[4], u8 hostId, u8 count, count x (u8 id, str name),
     // then 4 slots x (u8 owner, u8 char, u8 isAuto). char is always resolved to 0-7 (an AUTO CPU
-    // shows the character it will get); isAuto is 1 for a CPU the server picks for.
+    // shows the character it will get); isAuto is 1 for a CPU the server picks for. Then u8 continuing
+    // (1 in a continued game's room), and if 1, 4 x str savedName (who played each seat, "" for a CPU).
     PB_MSG_ROOM_STATE = 66,
-    PB_MSG_GAME_START = 67,  // PbNetSettings
+    PB_MSG_GAME_START = 67,  // PbNetSettings, u16 stateSize, stateSize bytes (as START_GAME)
     PB_MSG_FRAME = 68,       // u32 frame, u8 humanMask, for each set bit (port 0..3): u8 pad[padSize]
     PB_MSG_DESYNC = 69,      // u32 frame
     PB_MSG_GAME_ENDED = 70,  // u8 reason (PbNetEndReason), u8 clientId (who left, or 0xFF)

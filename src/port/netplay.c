@@ -4,9 +4,11 @@
 #include "game/gamework_data.h"
 #include "port/autotest.h"
 #include "port/main.h"
+#include "port/online_save.h"
 #include "port/ui.h"
 
 #include <enet/enet.h>
+#include "game/object.h" // after enet.h: it pulls in windows.h, which must not come before winsock2
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,6 +34,9 @@ static int sDelay = 4;
 static char sName[PB_NET_MAX_NAME + 1];
 static int sPrefPort = -1; // --port / Online screen: wanted port (0-3) and character (0-7), -1 = any
 static int sPrefChar = -1;
+// Host: the save the next room continues (Online screen or --continue).
+static PbOnlineSave sPendingContinue;
+static int sHasPendingContinue = 0;
 
 static ENetHost *sHost = NULL;
 static ENetPeer *sPeer = NULL;
@@ -96,6 +101,15 @@ int partyboard_netplay_parse(int argc, char *argv[])
             if (sPrefChar < 0 || sPrefChar >= PB_NET_MAX_CHARS) {
                 fprintf(stderr, "[netplay] --char expects a character id 0-7\n");
                 ok = 0;
+            }
+            i++;
+        } else if (strcmp(arg, "--continue") == 0 && next) {
+            // Host: continue the online save in this file (board and turn count come from it).
+            if (!partyboard_online_save_load(next, &sPendingContinue) || !sPendingContinue.hasResume) {
+                fprintf(stderr, "[netplay] --continue: can't read a continuable save from %s\n", next);
+                ok = 0;
+            } else {
+                sHasPendingContinue = 1;
             }
             i++;
         } else if (strcmp(arg, "--port") == 0 && next) {
@@ -213,6 +227,12 @@ static char sRoomCode[PB_NET_ROOM_CODE_LEN + 1];
 static u8 sSlotOwner[PB_NET_MAX_PLAYERS];
 static u8 sSlotChar[PB_NET_MAX_PLAYERS];
 static u8 sSlotAuto[PB_NET_MAX_PLAYERS];
+// A continued game's room (ROOM_STATE): who played each seat in the save ("" = a CPU).
+static int sRoomContinuing = 0;
+static char sSavedNames[PB_NET_MAX_PLAYERS][PB_NET_MAX_NAME + 1];
+// GAME_START's saved board state (a continued game), 0 bytes for a new game.
+static u8 sStartState[PB_NET_MAX_CONTINUE_STATE];
+static u16 sStartStateSize = 0;
 static char sError[256];
 static char sNotice[200]; // last rejected lobby request ("Luigi is taken by Bob"); not fatal
 static u32 sRoomStateTime = 0; // enet_time_get() of the last one
@@ -274,14 +294,32 @@ static void handle_packet(const u8 *data, size_t size)
             printf("P%d %s (%s)%s", i + 1, partyboard_netplay_slot_name(i), sCharNames[sSlotChar[i]], i < 3 ? ", " : "");
         }
         printf("\n");
+        sRoomContinuing = pbr_u8(&r) != 0 && !r.error;
+        for (i = 0; i < PB_NET_MAX_PLAYERS; i++) {
+            sSavedNames[i][0] = '\0';
+            if (sRoomContinuing) {
+                pbr_str(&r, sSavedNames[i], sizeof(sSavedNames[i]));
+            }
+        }
+        if (sRoomContinuing) {
+            printf("[netplay]   continuing a saved game\n");
+        }
         fflush(stdout);
         sRoomStateTime = enet_time_get();
         break;
     }
     case PB_MSG_GAME_START:
         pbr_settings(&r, &sSettings);
+        sStartStateSize = pbr_u16(&r);
+        if (sStartStateSize > PB_NET_MAX_CONTINUE_STATE) {
+            r.error = 1;
+        } else {
+            pbr_bytes(&r, sStartState, sStartStateSize);
+        }
         if (!r.error) {
             sGameStarted = 1;
+        } else {
+            sStartStateSize = 0;
         }
         break;
     case PB_MSG_FRAME:
@@ -354,6 +392,7 @@ static void drop_connection(void)
     sRoomCount = 0;
     sRoomCode[0] = '\0';
     sNotice[0] = '\0';
+    sRoomContinuing = 0;
 }
 
 static void fail(const char *why)
@@ -455,6 +494,11 @@ static void finalize_start(void)
     }
     partyboard_autotest_configure_netplay(sSettings.seed, sSettings.board, sSettings.turns, chars, sSettings.cpuLevel,
         sHumanMask);
+    // A continued game boots the board from the saved state instead of a new party (same on every machine).
+    partyboard_autotest_set_continue_state(sStartStateSize ? sStartState : NULL, sStartStateSize);
+    if (sStartStateSize) {
+        printf("[netplay] continuing a saved game (%u bytes of board state)\n", sStartStateSize);
+    }
     sActive = 1;
     sState = PB_LOBBY_STARTED;
     printf("[netplay] game starting: board %u, %u turns, seed %u, input delay %u, chars %u,%u,%u,%u, your port(s) "
@@ -525,6 +569,9 @@ static void lobby_update(int timeoutMs)
             if (sPrefChar >= 0) {
                 partyboard_netplay_choose(-1, sPrefChar);
             }
+            if (sHasPendingContinue && partyboard_netplay_is_host()) {
+                partyboard_netplay_set_continue(&sPendingContinue);
+            }
         }
         if (sGameStarted) {
             finalize_start();
@@ -543,13 +590,21 @@ void partyboard_netplay_update(void)
 int partyboard_netplay_start_game(int board, int turns, int inputDelay, int cpuLevel, u32 seed)
 {
     PbNetSettings s;
-    u8 buf[64];
+    u8 buf[64 + PB_NET_MAX_CONTINUE_STATE];
+    const int continuing = sRoomContinuing && sHasPendingContinue;
     PbNetWriter w;
     int i;
     if (sState != PB_LOBBY_IN_ROOM || !partyboard_netplay_is_host()) {
         return 0;
     }
     memset(&s, 0, sizeof(s));
+    if (continuing) {
+        // The save decides the board and turn count; the host's CPU level and delay still apply.
+        board = sPendingContinue.board;
+        turns = sPendingContinue.maxTurns;
+        // The continued game keeps saving into the file it came from.
+        partyboard_online_save_continue_into(sPendingContinue.path);
+    }
     s.seed = seed ? seed : (u32)time(NULL);
     s.board = (u8)board;
     s.turns = (u8)turns;
@@ -564,8 +619,54 @@ int partyboard_netplay_start_game(int board, int turns, int inputDelay, int cpuL
     pbw_init(&w, buf, sizeof(buf));
     pbw_u8(&w, PB_MSG_START_GAME);
     pbw_settings(&w, &s);
+    if (continuing) {
+        pbw_u16(&w, PB_ONLINE_SAVE_STATE_SIZE);
+        pbw_bytes(&w, sPendingContinue.resumeState, PB_ONLINE_SAVE_STATE_SIZE);
+    } else {
+        pbw_u16(&w, 0);
+    }
     send_writer(PB_NET_CHANNEL_CONTROL, &w);
     return 1;
+}
+
+int partyboard_netplay_set_continue(const PbOnlineSave *save)
+{
+    u8 buf[256];
+    PbNetWriter w;
+    int i;
+    sHasPendingContinue = save != NULL;
+    if (save != NULL && save != &sPendingContinue) {
+        sPendingContinue = *save;
+    }
+    if (sState != PB_LOBBY_IN_ROOM || !partyboard_netplay_is_host()) {
+        return 0; // sent on entering the room
+    }
+    sNotice[0] = '\0';
+    pbw_init(&w, buf, sizeof(buf));
+    pbw_u8(&w, PB_MSG_SET_CONTINUE);
+    pbw_u8(&w, sHasPendingContinue ? 1 : 0);
+    for (i = 0; sHasPendingContinue && i < PB_NET_MAX_PLAYERS; i++) {
+        pbw_u8(&w, sPendingContinue.chars[i]);
+        pbw_u8(&w, sPendingContinue.wasHuman[i]);
+        pbw_str(&w, sPendingContinue.names[i], PB_NET_MAX_NAME);
+    }
+    send_writer(PB_NET_CHANNEL_CONTROL, &w);
+    return 1;
+}
+
+const PbOnlineSave *partyboard_netplay_pending_continue(void)
+{
+    return sHasPendingContinue ? &sPendingContinue : NULL;
+}
+
+int partyboard_netplay_room_continuing(void)
+{
+    return sRoomCount > 0 && sRoomContinuing;
+}
+
+const char *partyboard_netplay_saved_name(int port)
+{
+    return (partyboard_netplay_room_continuing() && port >= 0 && port < PB_NET_MAX_PLAYERS) ? sSavedNames[port] : "";
 }
 
 void partyboard_netplay_set_preference(int port, int character)
@@ -660,6 +761,18 @@ int partyboard_netplay_my_port(void)
 const char *partyboard_netplay_notice(void)
 {
     return sNotice;
+}
+
+int partyboard_netplay_player_for_port(int port)
+{
+    int i;
+    // The board orders players by turn order (board/start.c); pad_idx keeps the seat (lockstep pad) each plays.
+    for (i = 0; i < PB_NET_MAX_PLAYERS; i++) {
+        if (GWPlayerCfg[i].pad_idx == port) {
+            return i;
+        }
+    }
+    return port;
 }
 
 const char *partyboard_netplay_port_name(int port)
@@ -894,6 +1007,9 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
             if ((int)(sFrame % (u32)tapEvery) < 5) {
                 local[0].button = PAD_BUTTON_A;
                 local[0].analogA = 0xFF;
+            } else if (omcurovl == DLL_instdll && (int)(sFrame % (u32)tapEvery) >= tapEvery / 2 &&
+                       (int)(sFrame % (u32)tapEvery) < tapEvery / 2 + 5) {
+                local[0].button = PAD_BUTTON_START; // a minigame's instructions start on START
             }
         }
     }
@@ -918,10 +1034,11 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
         // CPU takes over on the same frame everywhere.
         for (port = 0; port < PB_NET_MAX_PLAYERS; port++) {
             if ((sHumanMask & (1 << port)) && !(slot->humanMask & (1 << port))) {
-                GWPlayerCfg[port].iscom = 1;
-                GWPlayerCfg[port].diff = sSettings.cpuLevel;
-                GWPlayer[port].com = 1;
-                GWPlayer[port].diff = sSettings.cpuLevel;
+                const int player = partyboard_netplay_player_for_port(port);
+                GWPlayerCfg[player].iscom = 1;
+                GWPlayerCfg[player].diff = sSettings.cpuLevel;
+                GWPlayer[player].com = 1;
+                GWPlayer[player].diff = sSettings.cpuLevel;
                 printf("[netplay] frame %u: player %d is now a CPU\n", sFrame, port + 1);
                 {
                     char msg[64];

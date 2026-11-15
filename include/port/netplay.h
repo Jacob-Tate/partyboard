@@ -13,6 +13,7 @@
 //   --delay <frames>        With --create: input delay in frames (default 4)
 //   --char <0-7>            Your character (Mario Luigi Peach Yoshi Wario DK Daisy Waluigi)
 //   --port <1-4>            Your player number, if free
+//   --continue <file>       With --create: continue an online save (<user dir>/online/*.pbsave)
 //
 // The host's --board, --turns, --cpu-level and --seed choose the game; the host's --chars sets all
 // four characters. Without --port/--char, people get ports 1, 2, ... in join order and the first
@@ -61,11 +62,23 @@ const char *partyboard_netplay_notice(void); // last rejected request, "" if non
 const char *partyboard_netplay_char_name(int character);
 // During an online game: the name of the person who started on a port, "" for CPU ports.
 const char *partyboard_netplay_port_name(int port);
+// The player record (GWPlayer/GWPlayerCfg index) that plays seat `port`. The board orders the records by turn
+// order, so record i is not seat i once a party has started.
+int partyboard_netplay_player_for_port(int port);
 // During an online game: the settings every client started with (NULL otherwise).
 struct PbNetSettings;
 const struct PbNetSettings *partyboard_netplay_game_settings(void);
 // This build's id (the same executable on every machine has the same id).
 const char *partyboard_netplay_build_id(void);
+// Host: continue a saved online game (port/online_save.h) in the room, or NULL for a new game. Sent now if in a
+// room as host, else on entering one. The save's board, turn count and seats then apply; people get their seats
+// back by name.
+struct PbOnlineSave;
+int partyboard_netplay_set_continue(const struct PbOnlineSave *save);
+const struct PbOnlineSave *partyboard_netplay_pending_continue(void);
+// In a room that continues a saved game: who played `port` in the save ("" for a CPU seat).
+int partyboard_netplay_room_continuing(void);
+const char *partyboard_netplay_saved_name(int port);
 // Leaves the room and disconnects (not once the game has started).
 void partyboard_netplay_leave(void);
 PbNetLobbyState partyboard_netplay_state(void);

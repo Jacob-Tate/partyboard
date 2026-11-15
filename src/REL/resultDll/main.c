@@ -24,6 +24,9 @@
 
 #ifndef __MWERKS__
 #include "game/esprite.h"
+#ifdef TARGET_PC
+#include "port/online_save.h"
+#endif
 #endif
 
 static StageModel resultModel[] = { { DATA_MAKE_NUM(DATADIR_RESULT, 0x00), 1, 0, -1, -1, { 148, 132, 500 }, { 0, 0, 0 }, { 1, 1, 1 } },
@@ -211,6 +214,12 @@ static void ResultMain(void)
     }
     HuAudSeqAllFadeOut(1000);
     WipeColorSet(255, 255, 255);
+#ifdef TARGET_PC
+    // Online games skip the card save below; the host keeps its own checkpoint of this same state instead.
+    if (GWPartyGet() == 1) {
+        partyboard_online_save_resume_point();
+    }
+#endif
     if (GWSaveModeGet() != 1 && SLSaveFlagGet()) {
         WipeCreate(WIPE_MODE_OUT, WIPE_TYPE_NORMAL, 30);
         while (WipeStatGet()) {

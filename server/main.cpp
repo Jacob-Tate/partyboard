@@ -68,6 +68,10 @@ struct Room {
     // port; the rest are CPUs. People always have a character; a CPU may be PB_NET_CHAR_AUTO.
     std::array<uint8_t, PB_NET_MAX_PLAYERS> slotOwner{PB_NET_PORT_CPU, PB_NET_PORT_CPU, PB_NET_PORT_CPU, PB_NET_PORT_CPU};
     std::array<uint8_t, PB_NET_MAX_PLAYERS> slotChar{PB_NET_CHAR_AUTO, PB_NET_CHAR_AUTO, PB_NET_CHAR_AUTO, PB_NET_CHAR_AUTO};
+    // A continued game (SET_CONTINUE): characters stay with their ports, and seats go back to the people who
+    // played them (by name).
+    bool continuing = false;
+    std::array<std::string, PB_NET_MAX_PLAYERS> savedName; // "" for a seat a CPU played
     bool inGame = false;
     PbNetSettings settings{};
     uint8_t humanMask = 0;
@@ -129,8 +133,29 @@ uint8_t firstFreeChar(const Room &room) {
     return 0; // unreachable: 4 slots, 8 characters
 }
 
-// A newcomer takes the lowest CPU port and the first free character.
+// A newcomer takes the lowest CPU port and the first free character. In a continued game they take back the seat
+// saved under their name if it is free, else the lowest free seat a CPU played (else any free one), and the
+// seat's character stays.
 void seat(Room &room, uint8_t id) {
+    if (room.continuing) {
+        const std::string &name = gClients.at(id)->name;
+        for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+            if (room.slotOwner[port] == PB_NET_PORT_CPU && !room.savedName[port].empty() && room.savedName[port] == name) {
+                room.slotOwner[port] = id;
+                return;
+            }
+        }
+        // Others prefer a seat a CPU played, so a saved player who hasn't come back yet still finds theirs free.
+        for (int pass = 0; pass < 2; pass++) {
+            for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+                if (room.slotOwner[port] == PB_NET_PORT_CPU && (pass == 1 || room.savedName[port].empty())) {
+                    room.slotOwner[port] = id;
+                    return;
+                }
+            }
+        }
+        return;
+    }
     for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
         if (room.slotOwner[port] != PB_NET_PORT_CPU) continue;
         room.slotOwner[port] = id;
@@ -157,6 +182,10 @@ void sendRoomState(Room &room) {
         pbw_u8(&w, room.slotOwner[port]);
         pbw_u8(&w, chars[port]);
         pbw_u8(&w, room.slotChar[port] == PB_NET_CHAR_AUTO ? 1 : 0);
+    }
+    pbw_u8(&w, room.continuing ? 1 : 0);
+    if (room.continuing) {
+        for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) pbw_str(&w, room.savedName[port].c_str(), PB_NET_MAX_NAME);
     }
     broadcast(room, PB_NET_CHANNEL_CONTROL, w);
 }
@@ -219,7 +248,7 @@ void leaveRoom(Client &c) {
     room->members.erase(std::find(room->members.begin(), room->members.end(), c.id));
     if (const int port = portOf(*room, c.id); port >= 0) {
         room->slotOwner[port] = PB_NET_PORT_CPU;
-        room->slotChar[port] = PB_NET_CHAR_AUTO;
+        if (!room->continuing) room->slotChar[port] = PB_NET_CHAR_AUTO;
     }
     logf("room %s: %s left (%zu remaining)", room->code.c_str(), c.name.c_str(), room->members.size());
     if (room->members.empty()) {
@@ -328,7 +357,13 @@ void onStartGame(Client &c, PbNetReader &r) {
     if (room->inGame) return sendError(c, PB_ERR_IN_GAME, "already playing");
     PbNetSettings s;
     pbr_settings(&r, &s);
-    if (r.error) return sendError(c, PB_ERR_BAD_MESSAGE, "malformed START_GAME");
+    const uint16_t stateSize = pbr_u16(&r);
+    std::vector<uint8_t> state(stateSize <= PB_NET_MAX_CONTINUE_STATE ? stateSize : 0);
+    pbr_bytes(&r, state.data(), state.size());
+    if (r.error || stateSize > PB_NET_MAX_CONTINUE_STATE) return sendError(c, PB_ERR_BAD_MESSAGE, "malformed START_GAME");
+    if (room->continuing && state.empty()) {
+        return sendError(c, PB_ERR_BAD_SETTINGS, "a continued game needs its saved state");
+    }
     // Seating and characters come from the lobby, not from the host's message.
     const auto chars = resolvedChars(*room);
     std::copy(chars.begin(), chars.end(), s.chars);
@@ -357,15 +392,17 @@ void onStartGame(Client &c, PbNetReader &r) {
     room->frames.clear();
     room->checksums.clear();
 
-    uint8_t buf[64];
+    std::vector<uint8_t> buf(64 + state.size());
     PbNetWriter w;
-    pbw_init(&w, buf, sizeof(buf));
+    pbw_init(&w, buf.data(), buf.size());
     pbw_u8(&w, PB_MSG_GAME_START);
     pbw_settings(&w, &s);
+    pbw_u16(&w, static_cast<uint16_t>(state.size()));
+    pbw_bytes(&w, state.data(), state.size());
     broadcast(*room, PB_NET_CHANNEL_CONTROL, w);
-    logf("room %s: game started (board %u, %u turns, seed %u, delay %u, human ports 0x%x, chars %u,%u,%u,%u)",
-         room->code.c_str(), s.board, s.turns, s.seed, s.inputDelay, humanMask, s.chars[0], s.chars[1], s.chars[2],
-         s.chars[3]);
+    logf("room %s: %s (board %u, %u turns, seed %u, delay %u, human ports 0x%x, chars %u,%u,%u,%u)",
+         room->code.c_str(), state.empty() ? "game started" : "continued game started", s.board, s.turns, s.seed,
+         s.inputDelay, humanMask, s.chars[0], s.chars[1], s.chars[2], s.chars[3]);
 }
 
 // Name of whoever holds a slot, for error messages.
@@ -389,6 +426,9 @@ void onChoose(Client &c, PbNetReader &r) {
     if (port < 0) return sendError(c, PB_ERR_BAD_MESSAGE, "you have no port"); // can't happen
     auto owners = room->slotOwner;
     auto chars = room->slotChar;
+    if (room->continuing && wantChar != PB_NET_KEEP && wantChar != chars[port]) {
+        return sendError(c, PB_ERR_TAKEN, "characters are fixed in a continued game");
+    }
     if (wantPort != PB_NET_KEEP && wantPort != port) {
         if (owners[wantPort] != PB_NET_PORT_CPU) {
             char msg[96];
@@ -396,10 +436,10 @@ void onChoose(Client &c, PbNetReader &r) {
             return sendError(c, PB_ERR_TAKEN, msg);
         }
         std::swap(owners[port], owners[wantPort]); // the CPU (and its character choice) moves to our old port
-        std::swap(chars[port], chars[wantPort]);
+        if (!room->continuing) std::swap(chars[port], chars[wantPort]); // continued: characters stay with ports
         port = wantPort;
     }
-    if (wantChar != PB_NET_KEEP) {
+    if (wantChar != PB_NET_KEEP && !room->continuing) {
         for (int other = 0; other < PB_NET_MAX_PLAYERS; other++) {
             if (other != port && chars[other] == wantChar) {
                 char msg[96];
@@ -425,6 +465,9 @@ void onSetLayout(Client &c, PbNetReader &r) {
     if (!room) return sendError(c, PB_ERR_NO_SUCH_ROOM, "not in a room");
     if (room->hostId != c.id) return sendError(c, PB_ERR_NOT_HOST, "only the host can arrange the ports");
     if (room->inGame) return sendError(c, PB_ERR_IN_GAME, "the game has started");
+    if (room->continuing && chars != room->slotChar) {
+        return sendError(c, PB_ERR_BAD_SETTINGS, "characters are fixed in a continued game");
+    }
     for (uint8_t id : room->members) {
         if (std::count(owners.begin(), owners.end(), id) != 1) {
             return sendError(c, PB_ERR_BAD_SETTINGS, "every player needs exactly one port");
@@ -449,6 +492,41 @@ void onSetLayout(Client &c, PbNetReader &r) {
     room->slotOwner = owners;
     room->slotChar = chars;
     logf("room %s: host set the layout", room->code.c_str());
+    sendRoomState(*room);
+}
+
+void onSetContinue(Client &c, PbNetReader &r) {
+    Room *room = c.room;
+    const uint8_t enabled = pbr_u8(&r);
+    std::array<uint8_t, PB_NET_MAX_PLAYERS> chars{};
+    std::array<std::string, PB_NET_MAX_PLAYERS> names;
+    if (enabled) {
+        for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+            char name[PB_NET_MAX_NAME + 1];
+            chars[port] = pbr_u8(&r);
+            const uint8_t wasHuman = pbr_u8(&r);
+            pbr_str(&r, name, sizeof(name));
+            names[port] = wasHuman ? name : "";
+        }
+    }
+    if (r.error) return sendError(c, PB_ERR_BAD_MESSAGE, "malformed SET_CONTINUE");
+    if (!room) return sendError(c, PB_ERR_NO_SUCH_ROOM, "not in a room");
+    if (room->hostId != c.id) return sendError(c, PB_ERR_NOT_HOST, "only the host can continue a game");
+    if (room->inGame) return sendError(c, PB_ERR_IN_GAME, "the game has started");
+    for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+        for (int other = 0; enabled && other < port; other++) {
+            if (chars[port] >= PB_NET_MAX_CHARS || chars[port] == chars[other]) {
+                return sendError(c, PB_ERR_BAD_SETTINGS, "the save's characters are invalid");
+            }
+        }
+    }
+    room->continuing = enabled != 0;
+    room->savedName = names;
+    room->slotOwner.fill(PB_NET_PORT_CPU);
+    room->slotChar.fill(PB_NET_CHAR_AUTO);
+    if (room->continuing) room->slotChar = chars;
+    for (uint8_t id : room->members) seat(*room, id); // join order: the host first
+    logf("room %s: %s", room->code.c_str(), room->continuing ? "continuing a saved game" : "new game");
     sendRoomState(*room);
 }
 
@@ -507,6 +585,7 @@ void onReceive(Client &c, ENetPacket *packet) {
     case PB_MSG_CHECKSUM: return onChecksum(c, r);
     case PB_MSG_CHOOSE: return onChoose(c, r);
     case PB_MSG_SET_LAYOUT: return onSetLayout(c, r);
+    case PB_MSG_SET_CONTINUE: return onSetContinue(c, r);
     default: return sendError(c, PB_ERR_BAD_MESSAGE, "unknown message type");
     }
 }

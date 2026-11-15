@@ -99,6 +99,8 @@ struct RoomState {
     uint8_t owner[PB_NET_MAX_PLAYERS] = {};
     uint8_t chr[PB_NET_MAX_PLAYERS] = {};
     uint8_t isAuto[PB_NET_MAX_PLAYERS] = {};
+    bool continuing = false;
+    std::string savedName[PB_NET_MAX_PLAYERS];
 };
 
 RoomState parseRoomState(const std::vector<uint8_t> &msg) {
@@ -119,6 +121,12 @@ RoomState parseRoomState(const std::vector<uint8_t> &msg) {
         st.owner[port] = pbr_u8(&r);
         st.chr[port] = pbr_u8(&r);
         st.isAuto[port] = pbr_u8(&r);
+    }
+    st.continuing = pbr_u8(&r) != 0;
+    for (int port = 0; st.continuing && port < PB_NET_MAX_PLAYERS; port++) {
+        char name[PB_NET_MAX_NAME + 1];
+        pbr_str(&r, name, sizeof(name));
+        st.savedName[port] = name;
     }
     st.ok = !r.error && r.pos == r.size;
     return st;
@@ -144,6 +152,20 @@ void setLayout(TestClient &c, const uint8_t owner[4], const uint8_t chr[4]) {
 bool expectError(TestClient &c, uint8_t code) {
     auto msg = c.waitFor(PB_MSG_ERROR);
     return msg.size() > 1 && msg[1] == code;
+}
+
+void setContinue(TestClient &c, bool enabled, const uint8_t chr[4], const char *const names[4]) {
+    uint8_t buf[256];
+    PbNetWriter w;
+    pbw_init(&w, buf, sizeof(buf));
+    pbw_u8(&w, PB_MSG_SET_CONTINUE);
+    pbw_u8(&w, enabled ? 1 : 0);
+    for (int port = 0; enabled && port < 4; port++) {
+        pbw_u8(&w, chr[port]);
+        pbw_u8(&w, names[port][0] ? 1 : 0);
+        pbw_str(&w, names[port], PB_NET_MAX_NAME);
+    }
+    c.send(PB_NET_CHANNEL_CONTROL, w);
 }
 
 void sendInput(TestClient &c, uint32_t frame, uint8_t value) {
@@ -267,6 +289,104 @@ int main(int argc, char **argv) {
         b.waitFor(PB_MSG_ROOM_STATE, 3000);
         enet_host_destroy(c.host);
     }
+    // ---- Continuing a saved game ----
+    {
+        const uint8_t savedChars[4] = {7, 6, 5, 4};
+        const char *const savedNames[4] = {"", "Bob", "Alice", ""};
+        setContinue(b, true, savedChars, savedNames);
+        CHECK(expectError(b, PB_ERR_NOT_HOST), "only the host can continue a game");
+        setContinue(a, true, savedChars, savedNames);
+        RoomState st = parseRoomState(b.waitFor(PB_MSG_ROOM_STATE));
+        const uint8_t owner[4] = {CPU, idB, idA, CPU};
+        CHECK(slotsAre(st, owner, savedChars) && st.continuing, "continue reseats by name: Bob P2, Alice P3, chars fixed");
+        CHECK(st.savedName[1] == "Bob" && st.savedName[2] == "Alice" && st.savedName[0].empty(), "saved names listed");
+        a.waitFor(PB_MSG_ROOM_STATE);
+        choose(b, KEEP, 0);
+        CHECK(expectError(b, PB_ERR_TAKEN), "characters are fixed in a continued game");
+        choose(b, 3, KEEP); // Bob takes the CPU seat P4; the characters stay with the ports
+        st = parseRoomState(a.waitFor(PB_MSG_ROOM_STATE));
+        const uint8_t owner2[4] = {CPU, CPU, idA, idB};
+        CHECK(slotsAre(st, owner2, savedChars), "moving keeps each port's character");
+        b.waitFor(PB_MSG_ROOM_STATE);
+        setLayout(a, std::array<uint8_t, 4>{idB, CPU, idA, CPU}.data(), std::array<uint8_t, 4>{0, 1, 2, 3}.data());
+        CHECK(expectError(a, PB_ERR_BAD_SETTINGS), "a continued game's layout can't change characters");
+
+        TestClient c;
+        CHECK(c.connect(hostname, port), "third client connects");
+        hello(c, "Cara");
+        c.waitFor(PB_MSG_WELCOME);
+        simple(c, PB_MSG_JOIN_ROOM, code, 4);
+        st = parseRoomState(c.waitFor(PB_MSG_ROOM_STATE));
+        CHECK(st.ok && st.count == 3 && st.chr[0] == 7 && st.owner[0] != CPU && st.owner[1] == CPU,
+              "a newcomer takes a seat a CPU played (P1), not Bob's saved seat (P2)");
+        a.waitFor(PB_MSG_ROOM_STATE);
+        b.waitFor(PB_MSG_ROOM_STATE);
+        enet_peer_disconnect(c.peer, 0);
+        c.pump(200);
+        st = parseRoomState(a.waitFor(PB_MSG_ROOM_STATE, 3000));
+        CHECK(st.ok && st.owner[0] == CPU && st.chr[0] == 7 && !st.isAuto[0], "a leaver's seat keeps its character");
+        b.waitFor(PB_MSG_ROOM_STATE, 3000);
+        enet_host_destroy(c.host);
+
+        // Starting a continued game needs the saved state, and everyone gets it as sent.
+        PbNetSettings cs{};
+        cs.seed = 99;
+        cs.turns = 20;
+        cs.cpuLevel = 2;
+        cs.inputDelay = 4;
+        uint8_t cbuf[64 + 412];
+        PbNetWriter cw;
+        pbw_init(&cw, cbuf, sizeof(cbuf));
+        pbw_settings(&cw, &cs);
+        pbw_u16(&cw, 0);
+        simple(a, PB_MSG_START_GAME, cbuf, cw.pos);
+        CHECK(expectError(a, PB_ERR_BAD_SETTINGS), "a continued game can't start without its saved state");
+        uint8_t state[412];
+        for (int i = 0; i < 412; i++) state[i] = static_cast<uint8_t>(i * 7);
+        pbw_init(&cw, cbuf, sizeof(cbuf));
+        pbw_settings(&cw, &cs);
+        pbw_u16(&cw, sizeof(state));
+        pbw_bytes(&cw, state, sizeof(state));
+        {
+            uint8_t msg[sizeof(cbuf) + 1];
+            msg[0] = PB_MSG_START_GAME;
+            std::memcpy(msg + 1, cbuf, cw.pos);
+            PbNetWriter mw;
+            mw.data = msg;
+            mw.size = sizeof(msg);
+            mw.pos = cw.pos + 1;
+            mw.overflow = 0;
+            a.send(PB_NET_CHANNEL_CONTROL, mw);
+        }
+        auto ga = a.waitFor(PB_MSG_GAME_START);
+        auto gb = b.waitFor(PB_MSG_GAME_START);
+        bool stateOk = false;
+        if (!gb.empty()) {
+            PbNetReader r;
+            PbNetSettings got;
+            pbr_init(&r, gb.data() + 1, gb.size() - 1);
+            pbr_settings(&r, &got);
+            const uint16_t n = pbr_u16(&r);
+            stateOk = !r.error && n == sizeof(state) && r.size - r.pos == n &&
+                      std::memcmp(gb.data() + 1 + r.pos, state, n) == 0 && got.portOwner[3] == idB && got.chars[0] == 7;
+        }
+        CHECK(!ga.empty() && ga == gb && stateOk, "both get the continued game's start with the saved state");
+        // End that game (a forced desync), then Bob leaves the room and comes back by its code.
+        sendChecksum(a, 60, 1);
+        sendChecksum(b, 60, 2);
+        a.waitFor(PB_MSG_GAME_ENDED);
+        b.waitFor(PB_MSG_GAME_ENDED);
+        simple(b, PB_MSG_LEAVE_ROOM);
+        a.waitFor(PB_MSG_ROOM_STATE);
+        simple(b, PB_MSG_JOIN_ROOM, code, 4);
+        st = parseRoomState(b.waitFor(PB_MSG_ROOM_STATE));
+        CHECK(st.ok && st.owner[1] == idB, "rejoining a continued room by name takes the saved seat back (P2)");
+        a.waitFor(PB_MSG_ROOM_STATE);
+        setContinue(a, false, savedChars, savedNames);
+        st = parseRoomState(b.waitFor(PB_MSG_ROOM_STATE));
+        CHECK(st.ok && !st.continuing, "back to a new game");
+        a.waitFor(PB_MSG_ROOM_STATE);
+    }
     // Back to Alice P1, Bob P2 for the lockstep checks below, with a host-picked CPU on P4.
     setLayout(a, std::array<uint8_t, 4>{idA, idB, CPU, CPU}.data(), std::array<uint8_t, 4>{6, 1, AUTO, 0}.data());
     a.waitFor(PB_MSG_ROOM_STATE);
@@ -286,6 +406,7 @@ int main(int argc, char **argv) {
     PbNetWriter sw;
     pbw_init(&sw, sbuf, sizeof(sbuf));
     pbw_settings(&sw, &s);
+    pbw_u16(&sw, 0); // a new game: no saved state
     simple(b, PB_MSG_START_GAME, sbuf, sw.pos);
     CHECK(!b.waitFor(PB_MSG_ERROR).empty(), "non-host start is rejected");
     simple(a, PB_MSG_START_GAME, sbuf, sw.pos);

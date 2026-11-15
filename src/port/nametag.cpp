@@ -14,6 +14,7 @@
 #include <vector>
 
 extern "C" {
+#include "game/gamework_data.h"
 #include "game/memory.h"
 #include "game/sprite.h"
 }
@@ -167,8 +168,10 @@ std::vector<uint8_t> dilate(const std::vector<uint8_t> &src, int w, int h, int r
 
 } // namespace
 
-extern "C" ANIMDATA *partyboard_nametag_anim(int port)
+extern "C" ANIMDATA *partyboard_nametag_anim(int player)
 {
+    // `player` is a player record; the board orders those by turn order, and pad_idx is the seat it plays.
+    const int port = GWPlayerCfg[player].pad_idx;
     const char *name = partyboard_netplay_port_name(port);
     if (!name || !name[0] || !init_fonts()) {
         return nullptr;

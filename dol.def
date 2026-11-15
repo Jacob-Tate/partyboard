@@ -1113,3 +1113,4 @@ EXPORTS
     partyboard_version_is_ntsc
     partyboard_version_is_usa
     pb_button_art_esp_seat
+    partyboard_online_save_resume_point
