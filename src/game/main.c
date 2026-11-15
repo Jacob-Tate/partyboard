@@ -29,6 +29,7 @@
 #include "aurora/dvd.h"
 #include <aurora/aurora.h>
 #include <aurora/event.h>
+#include <SDL3/SDL_events.h>
 #include <stdlib.h>
 
 const char *__asan_default_options()
@@ -76,16 +77,107 @@ void PartyBoard_RequestRestart(void)
 }
 #endif
 
+// One game frame (everything in the main loop except event pumping). On PC it also runs from
+// an SDL event watch while Windows holds the main thread in a window move/resize loop.
+static void MainFrame(void)
+{
+    u32 met0;
+    u32 met1;
+    s32 retrace;
+
+    retrace = VIGetRetraceCount();
+    if (HuSoftResetButtonCheck() != 0 || HuDvdErrWait != 0) {
+        return;
+    }
+    HuPerfZero();
+
+    HuPerfBegin(2);
+#ifdef TARGET_PC
+    aurora_begin_frame();
+#endif
+    HuSysBeforeRender();
+    GXSetGPMetric(GX_PERF0_CLIP_VTX, GX_PERF1_VERTICES);
+    GXClearGPMetric();
+    GXSetVCacheMetric(GX_VC_ALL);
+    GXClearVCacheMetric();
+    GXClearPixMetric();
+    GXClearMemMetric();
+
+    HuPerfBegin(0);
+    Hu3DPreProc();
+    HuPadRead();
+    pfClsScr();
+
+    HuPrcCall(1);
+    MGSeqMain();
+    HuPerfBegin(1);
+    Hu3DExec();
+    HuDvdErrorWatch();
+    WipeExecAlways();
+    HuPerfEnd(0);
+
+    pfDrawFonts();
+    HuPerfEnd(1);
+
+    msmMusFdoutEnd();
+    HuSysDoneRender(retrace);
+    GXReadGPMetric(&met0, &met1);
+    GXReadVCacheMetric(&vcheck, &vmiss, &vstall);
+    GXReadPixMetric(&top_pixels_in, &top_pixels_out, &bot_pixels_in, &bot_pixels_out, &clr_pixels_in, &total_copy_clks);
+    GXReadMemMetric(&cp_req, &tc_req, &cpu_rd_req, &cpu_wr_req, &dsp_req, &io_req, &vi_req, &pe_req, &rf_req, &fi_req);
+    HuPerfEnd(2);
+    GlobalCounter++;
+#ifdef TARGET_PC
+    partyboard_audio_frame();
+    partyboard_autotest_frame_end();
+#endif
+
+#ifdef TARGET_PC
+    ui_update();
+    aurora_end_frame();
+    if (!disableFrameLimiter) {
+        frame_limiter();
+    }
+#endif
+}
+
+#ifdef TARGET_PC
+static int sInMainFrame = 0;
+static int sMainLoopRunning = 0;
+static int sInLiveMove = 0;
+
+static void MainFrameGuarded(void)
+{
+    sInMainFrame = 1;
+    MainFrame();
+    sInMainFrame = 0;
+}
+
+// Windows blocks the main thread inside its own loop while a window is dragged or resized, and
+// SDL sends live-resize EXPOSED events to watchers from inside that loop. Running frames from here
+// keeps the game going (and keeps netplay peers from stalling) while the window moves.
+static bool SDLCALL LiveMoveWatch(void *userdata, SDL_Event *event)
+{
+    (void)userdata;
+    if (event->type == SDL_EVENT_WINDOW_EXPOSED && event->window.data1 == 1 && sMainLoopRunning && !sInMainFrame
+        && PartyBoard_IsRunning) {
+        if (!sInLiveMove) {
+            sInLiveMove = 1;
+            OSReport("[window] move/resize in progress: running frames from the event watch\n");
+        }
+        MainFrameGuarded();
+    }
+    return true;
+}
+#endif
+
 #ifdef TARGET_PC
 int game_main(void)
 #else
 void main(void)
 #endif
 {
-    u32 met0;
-    u32 met1;
     s16 i;
-    s32 retrace;
 #if VERSION_PAL
     s16 temp = 0;
 #endif
@@ -125,6 +217,8 @@ void main(void)
     if (partyboard_autotest_get()->fast) {
         disableFrameLimiter = TRUE;
     }
+    SDL_AddEventWatch(LiveMoveWatch, NULL);
+    sMainLoopRunning = 1;
     while (PartyBoard_IsRunning) {
 #else
     while (1) {
@@ -157,63 +251,17 @@ void main(void)
             break;
         }
 #endif
-        retrace = VIGetRetraceCount();
-        if (HuSoftResetButtonCheck() != 0 || HuDvdErrWait != 0) {
-            continue;
-        }
-        HuPerfZero();
-
-        HuPerfBegin(2);
 #ifdef TARGET_PC
-        aurora_begin_frame();
-#endif
-        HuSysBeforeRender();
-        GXSetGPMetric(GX_PERF0_CLIP_VTX, GX_PERF1_VERTICES);
-        GXClearGPMetric();
-        GXSetVCacheMetric(GX_VC_ALL);
-        GXClearVCacheMetric();
-        GXClearPixMetric();
-        GXClearMemMetric();
-
-        HuPerfBegin(0);
-        Hu3DPreProc();
-        HuPadRead();
-        pfClsScr();
-
-        HuPrcCall(1);
-        MGSeqMain();
-        HuPerfBegin(1);
-        Hu3DExec();
-        HuDvdErrorWatch();
-        WipeExecAlways();
-        HuPerfEnd(0);
-
-        pfDrawFonts();
-        HuPerfEnd(1);
-
-        msmMusFdoutEnd();
-        HuSysDoneRender(retrace);
-        GXReadGPMetric(&met0, &met1);
-        GXReadVCacheMetric(&vcheck, &vmiss, &vstall);
-        GXReadPixMetric(&top_pixels_in, &top_pixels_out, &bot_pixels_in, &bot_pixels_out, &clr_pixels_in, &total_copy_clks);
-        GXReadMemMetric(&cp_req, &tc_req, &cpu_rd_req, &cpu_wr_req, &dsp_req, &io_req, &vi_req, &pe_req, &rf_req, &fi_req);
-        HuPerfEnd(2);
-        GlobalCounter++;
-#ifdef TARGET_PC
-        partyboard_audio_frame();
-        partyboard_autotest_frame_end();
-#endif
-
-#ifdef TARGET_PC
-        ui_update();
-        aurora_end_frame();
-        if (!disableFrameLimiter) {
-            frame_limiter();
-        }
+        sInLiveMove = 0;
+        MainFrameGuarded();
+#else
+        MainFrame();
 #endif
     }
 
 #ifdef TARGET_PC
+    sMainLoopRunning = 0;
+    SDL_RemoveEventWatch(LiveMoveWatch, NULL);
     return 0;
 #endif
 }

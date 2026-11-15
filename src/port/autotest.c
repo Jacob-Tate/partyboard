@@ -350,6 +350,9 @@ void partyboard_autotest_frame_end(void)
         }
         fprintf(sChecksumLog, "%u %d %08x %08x %08x %08x %08x %08x\n", GlobalCounter, (int)omcurovl,
             frand_seed_get(), (u32)rnd_seed, boardRandSeed, sys, players, cfg);
+        if (GlobalCounter % 60 == 0) {
+            fflush(sChecksumLog); // about once a second, so the log can be watched live
+        }
         if (sAutotest.dumpFrame && GlobalCounter == sAutotest.dumpFrame) {
             dump_bytes("GWSystem", &GWSystem, sizeof(GWSystem));
             dump_bytes("GWPlayer", GWPlayer, sizeof(GWPlayer));
