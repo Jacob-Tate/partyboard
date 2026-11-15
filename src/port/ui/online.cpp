@@ -29,6 +29,15 @@ namespace {
         "Bowser's Gnarly Party",
     };
 
+    // CPU difficulty levels, as the game names them (GWPlayerCfg diff 0-3).
+    constexpr std::array<const char *, 4> kCpuLevelNames = { "Easy", "Normal", "Hard", "Very Hard" };
+
+    int cpu_level()
+    {
+        const int level = getSettings().netplay.cpuLevel.getValue();
+        return level >= 0 && level < static_cast<int>(kCpuLevelNames.size()) ? level : 1;
+    }
+
     constexpr int kPorts = 4;
     constexpr int kChars = 8;
     constexpr uint8_t kCpu = 0xFF;  // PB_NET_PORT_CPU
@@ -374,6 +383,24 @@ OnlineWindow::OnlineWindow()
                              "4 suits a local network. Raise it if the game stutters over the internet "
                              "(each frame is about 17 ms).");
             });
+        leftPane.register_control(leftPane.add_select_button({
+                                      .key = "CPU Difficulty",
+                                      .getValue = [] { return Rml::String(kCpuLevelNames[cpu_level()]); },
+                                  }),
+            rightPane, [](Pane &pane) {
+                pane.add_rml("How well the CPU players play, including any CPU that takes over for someone "
+                             "who disconnects.");
+                for (int i = 0; i < static_cast<int>(kCpuLevelNames.size()); i++) {
+                    pane.add_button({
+                                        .text = kCpuLevelNames[i],
+                                        .isSelected = [i] { return cpu_level() == i; },
+                                    })
+                        .on_pressed([i] {
+                            getSettings().netplay.cpuLevel.setValue(i);
+                            save();
+                        });
+                }
+            });
         leftPane.register_control(leftPane
                                       .add_select_button({
                                           .key = "Create Room",
@@ -530,7 +557,7 @@ OnlineWindow::OnlineWindow()
                                       .on_pressed([] {
                                           const auto &s = getSettings().netplay;
                                           partyboard_netplay_start_game(s.board.getValue(), s.turns.getValue(),
-                                              s.inputDelay.getValue(), 1, 0);
+                                              s.inputDelay.getValue(), cpu_level(), 0);
                                       }),
             rightPane, [](Pane &pane) {
                 pane.add_rml("Host only: start the party for everyone in the room, with the ports and "

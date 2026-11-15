@@ -130,6 +130,7 @@ struct UserSettings {
         ConfigVar<int> turns;
         ConfigVar<int> inputDelay;
         ConfigVar<int> character;      // preferred character 0-7, -1 = any
+        ConfigVar<int> cpuLevel;       // host: CPU difficulty 0-3 (Easy, Normal, Hard, Very Hard)
     } netplay;
 };
 
