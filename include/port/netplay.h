@@ -61,6 +61,11 @@ const char *partyboard_netplay_notice(void); // last rejected request, "" if non
 const char *partyboard_netplay_char_name(int character);
 // During an online game: the name of the person who started on a port, "" for CPU ports.
 const char *partyboard_netplay_port_name(int port);
+// During an online game: the settings every client started with (NULL otherwise).
+struct PbNetSettings;
+const struct PbNetSettings *partyboard_netplay_game_settings(void);
+// This build's id (the same executable on every machine has the same id).
+const char *partyboard_netplay_build_id(void);
 // Leaves the room and disconnects (not once the game has started).
 void partyboard_netplay_leave(void);
 PbNetLobbyState partyboard_netplay_state(void);

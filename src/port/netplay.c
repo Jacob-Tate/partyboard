@@ -696,6 +696,16 @@ const char *partyboard_netplay_room_code(void)
     return sRoomCode;
 }
 
+const PbNetSettings *partyboard_netplay_game_settings(void)
+{
+    return sActive ? &sSettings : NULL;
+}
+
+const char *partyboard_netplay_build_id(void)
+{
+    return sBuildId;
+}
+
 int partyboard_netplay_is_host(void)
 {
     return sRoomCount > 0 && sRoomHost == sClientId;
@@ -871,6 +881,22 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
         fflush(stdout);
     }
     PADRead(local);
+    {
+        // Test aid: PB_NETPLAY_TEST_TAP=<n> taps A for 5 frames every n frames instead of the controller, so
+        // unattended online tests get past messages and prompts (off unless set).
+        static int tapEvery = -1;
+        if (tapEvery < 0) {
+            const char *env = getenv("PB_NETPLAY_TEST_TAP");
+            tapEvery = env ? atoi(env) : 0;
+        }
+        if (tapEvery > 0) {
+            memset(local, 0, sizeof(PADStatus) * PB_NET_MAX_PLAYERS);
+            if ((int)(sFrame % (u32)tapEvery) < 5) {
+                local[0].button = PAD_BUTTON_A;
+                local[0].analogA = 0xFF;
+            }
+        }
+    }
     send_input(sFrame + sSettings.inputDelay, local);
 
     slot = &sRing[sFrame % NET_RING];

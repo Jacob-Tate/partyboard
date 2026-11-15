@@ -145,6 +145,7 @@ set(PORT_FILES
         src/port/ui/portraits.hpp
         src/port/nametag.cpp
         src/port/log_file.cpp
+        src/port/online_save.cpp
         src/port/button_icons.cpp
         src/port/button_art.cpp
         src/port/ui/preset.cpp

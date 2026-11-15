@@ -33,6 +33,9 @@
 #include "game/chrman.h"
 #ifdef TARGET_PC
 #include "port/autotest.h"
+#ifdef TARGET_PC
+#include "port/online_save.h"
+#endif
 #endif
 
 extern void BoardLast5Exec(void);
@@ -472,6 +475,9 @@ static void MainFunc(void)
                 }
             }
             if(_CheckFlag(FLAG_ID_MAKE(1, 6))) {
+#ifdef TARGET_PC
+                partyboard_online_save_turn(i); // host's online autosave: player i's turn starts
+#endif
                 BoardPlayerTurnExec(i);
             } else {
                 if(!turn_cont) {
@@ -503,6 +509,9 @@ static void MainFunc(void)
                     } else {
                         fade_enable = 0;
                     }
+#ifdef TARGET_PC
+                    partyboard_online_save_turn(i); // host's online autosave: player i's turn starts
+#endif
                     BoardPlayerTurnExec(i);
                 }
             }
@@ -605,6 +614,9 @@ static s32 ExecTurnStart(void)
         BoardCameraMotionWait();
         turn_end = BoardTurnNext();
         if(turn_end) {
+#ifdef TARGET_PC
+            partyboard_online_save_party_over();
+#endif
             BoardKill();
             HuPrcEnd();
         }
