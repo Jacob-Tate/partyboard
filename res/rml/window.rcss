@@ -505,8 +505,8 @@ progress.verification-progress-bar {
     padding-top: 4dp;
 }
 
-/* Play Online character list: face icon read from the disc, then the name. */
-button.portrait-button {
+/* Play Online lists with pictures read from the disc: character faces, board thumbnails. */
+button.picture-button {
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -514,9 +514,31 @@ button.portrait-button {
     padding: 6dp 12dp;
 }
 
+button.picture-button img {
+    flex-shrink: 0;
+    margin-right: 14dp;
+}
+
 button.portrait-button img {
     width: 44dp;
     height: 44dp;
-    flex-shrink: 0;
-    margin-right: 14dp;
+}
+
+button.board-button img {
+    width: 68dp;
+    height: 44dp;
+    border-radius: 4dp;
+}
+
+/* The chosen board, large, above the board list (pictures are 248x160). */
+div.board-preview {
+    display: block;
+    margin-bottom: 8dp;
+    text-align: center;
+}
+
+div.board-preview img {
+    width: 248dp;
+    height: 160dp;
+    border-radius: 8dp;
 }

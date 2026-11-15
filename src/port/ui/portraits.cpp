@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -21,19 +22,26 @@ extern "C" {
 namespace partyboard::ui::portraits {
 namespace {
 
-    constexpr int kChars = 8;
-    constexpr int kFirstEntry = 0x2E; // board.bin: one face sprite per character id, in id order
-    constexpr int kSize = 64;         // each sprite stacks 64x64 expressions; the top one is neutral
-    constexpr int kFormatCmpr = 10;   // ANIM_BMP_CMPR
+    constexpr int kFormatC8 = 3;    // ANIM_BMP_C8 (RGB5A3 palette)
+    constexpr int kFormatCmpr = 10; // ANIM_BMP_CMPR
 
-    struct Portrait {
-        std::vector<std::byte> rgba; // kSize * kSize * 4, empty if missing
+    struct Image {
+        int width = 0;
+        int height = 0;
+        std::vector<std::byte> rgba;
     };
 
-    std::array<Portrait, kChars> gPortraits;
-    std::string gLoadedFrom; // disc image the portraits came from ("" = none yet)
-    std::string gFailedFor;  // disc image we already failed on, to avoid retrying every frame
-    bool gProviderRegistered = false;
+    // One family of pictures served under a URL scheme ("portrait://N").
+    struct ImageSet {
+        const char *scheme;
+        std::vector<Image> images;
+        std::string loadedFrom; // disc image the pictures came from
+        std::string failedFor;  // disc image we already failed on, so we don't retry every frame
+        bool registered = false;
+    };
+
+    ImageSet gPortraits { "portrait" };
+    ImageSet gBoards { "board" };
 
     uint32_t be32(const uint8_t *p)
     {
@@ -89,13 +97,23 @@ namespace {
         }
         const uint32_t rawLen = be32(archive.data() + offset);
         const uint32_t decodeType = be32(archive.data() + offset + 4);
-        if (rawLen == 0 || rawLen > 4 * 1024 * 1024) {
+        if (rawLen == 0 || rawLen > 8 * 1024 * 1024 || decodeType > DATA_DECODE_RLE) {
             return std::nullopt;
         }
         std::vector<uint8_t> out(rawLen + 1024); // slack: the decoders may write a little past the end
         HuDecodeData(archive.data() + offset + 8, out.data(), rawLen, static_cast<s32>(decodeType));
         out.resize(rawLen);
         return out;
+    }
+
+    void put(Image &img, int x, int y, const uint8_t c[4])
+    {
+        if (x < img.width && y < img.height) {
+            std::byte *dst = &img.rgba[(static_cast<size_t>(y) * img.width + x) * 4];
+            for (int k = 0; k < 4; k++) {
+                dst[k] = std::byte {c[k]};
+            }
+        }
     }
 
     void rgb565(uint16_t v, uint8_t out[3])
@@ -106,16 +124,33 @@ namespace {
         out[2] = uint8_t(b << 3 | b >> 2);
     }
 
-    // Decodes the top kSize x kSize of a GameCube CMPR texture (8x8 tiles of four DXT1 blocks).
-    bool decode_cmpr_top(const uint8_t *src, size_t srcLen, int width, std::vector<std::byte> &rgba)
+    void rgb5a3(uint16_t v, uint8_t out[4])
     {
-        const size_t needed = static_cast<size_t>(width / 8) * (kSize / 8) * 32;
-        if (width < kSize || width % 8 || srcLen < needed) {
+        if (v & 0x8000) {
+            const uint8_t r = (v >> 10) & 31, g = (v >> 5) & 31, b = v & 31;
+            out[0] = uint8_t(r << 3 | r >> 2);
+            out[1] = uint8_t(g << 3 | g >> 2);
+            out[2] = uint8_t(b << 3 | b >> 2);
+            out[3] = 255;
+        } else {
+            out[0] = uint8_t(((v >> 8) & 15) * 17);
+            out[1] = uint8_t(((v >> 4) & 15) * 17);
+            out[2] = uint8_t((v & 15) * 17);
+            out[3] = uint8_t(((v >> 12) & 7) * 255 / 7);
+        }
+    }
+
+    // GameCube CMPR: 8x8 tiles of four DXT1 blocks. Decodes the top `rows` rows only.
+    bool decode_cmpr(const uint8_t *src, size_t srcLen, int width, int rows, Image &img)
+    {
+        if (width % 8 || rows % 8 || srcLen < static_cast<size_t>(width / 8) * (rows / 8) * 32) {
             return false;
         }
-        rgba.assign(kSize * kSize * 4, std::byte {0});
+        img.width = width;
+        img.height = rows;
+        img.rgba.assign(static_cast<size_t>(width) * rows * 4, std::byte {0});
         const uint8_t *p = src;
-        for (int ty = 0; ty < kSize; ty += 8) {
+        for (int ty = 0; ty < rows; ty += 8) {
             for (int tx = 0; tx < width; tx += 8) {
                 for (int sub = 0; sub < 4; sub++, p += 8) {
                     const uint16_t c0 = be16(p), c1 = be16(p + 2);
@@ -136,15 +171,7 @@ namespace {
                     }
                     const int bx = tx + (sub & 1) * 4, by = ty + (sub >> 1) * 4;
                     for (int i = 0; i < 16; i++) {
-                        const int x = bx + i % 4, y = by + i / 4;
-                        if (x >= kSize) {
-                            continue;
-                        }
-                        const uint8_t *c = pal[(bits >> (30 - 2 * i)) & 3];
-                        std::byte *dst = &rgba[(static_cast<size_t>(y) * kSize + x) * 4];
-                        for (int k = 0; k < 4; k++) {
-                            dst[k] = std::byte {c[k]};
-                        }
+                        put(img, bx + i % 4, by + i / 4, pal[(bits >> (30 - 2 * i)) & 3]);
                     }
                 }
             }
@@ -152,84 +179,156 @@ namespace {
         return true;
     }
 
-    // The first bitmap of an ANIM sprite file (big-endian header: s16 bankNum, patNum, bmpNum, useNum,
-    // u32 bank, pat, bmp; bitmap: u8 pixSize, u8 format, s16 palNum, s16 w, s16 h, u32 size, u32 pal,
-    // u32 data).
-    bool decode_face(const std::vector<uint8_t> &anim, std::vector<std::byte> &rgba)
+    // GameCube C8: 8x4 tiles of 8-bit palette indices, RGB5A3 palette.
+    bool decode_c8(const uint8_t *src, size_t srcLen, const uint8_t *pal, int palNum, int width, int height, Image &img)
     {
-        if (anim.size() < 20 || be16(anim.data() + 4) < 1) {
+        const int tilesX = (width + 7) / 8, tilesY = (height + 3) / 4;
+        if (palNum <= 0 || palNum > 256 || srcLen < static_cast<size_t>(tilesX) * tilesY * 32) {
             return false;
         }
-        const uint32_t bmp = be32(anim.data() + 16);
+        std::vector<std::array<uint8_t, 4>> palette(256, std::array<uint8_t, 4> {0, 0, 0, 0});
+        for (int i = 0; i < palNum; i++) {
+            rgb5a3(be16(pal + 2 * i), palette[i].data());
+        }
+        img.width = width;
+        img.height = height;
+        img.rgba.assign(static_cast<size_t>(width) * height * 4, std::byte {0});
+        const uint8_t *p = src;
+        for (int ty = 0; ty < tilesY * 4; ty += 4) {
+            for (int tx = 0; tx < tilesX * 8; tx += 8) {
+                for (int i = 0; i < 32; i++) {
+                    put(img, tx + i % 8, ty + i / 8, palette[*p++].data());
+                }
+            }
+        }
+        return true;
+    }
+
+    // Bitmap `index` of an ANIM sprite file. Big-endian header: s16 bankNum, patNum, bmpNum, useNum,
+    // u32 bank, pat, bmp. Bitmap (20 bytes): u8 pixSize, u8 format, s16 palNum, s16 w, s16 h,
+    // u32 size, u32 pal, u32 data. maxRows > 0 keeps only the top rows (stacked frames).
+    bool decode_bitmap(const std::vector<uint8_t> &anim, int index, int maxRows, Image &img)
+    {
+        if (anim.size() < 20 || index >= static_cast<int16_t>(be16(anim.data() + 4))) {
+            return false;
+        }
+        const uint32_t bmp = be32(anim.data() + 16) + index * 20;
         if (bmp + 20 > anim.size()) {
             return false;
         }
         const uint8_t *b = anim.data() + bmp;
         const int format = b[1] & 0xF;
-        const int width = be16(b + 4);
-        const uint32_t data = be32(b + 16);
-        if (format != kFormatCmpr || data >= anim.size()) {
+        const int palNum = static_cast<int16_t>(be16(b + 2));
+        const int width = static_cast<int16_t>(be16(b + 4));
+        const int height = static_cast<int16_t>(be16(b + 6));
+        const uint32_t pal = be32(b + 12), data = be32(b + 16);
+        if (width <= 0 || height <= 0 || width > 1024 || height > 1024 || data >= anim.size()) {
             return false;
         }
-        return decode_cmpr_top(anim.data() + data, anim.size() - data, width, rgba);
+        const int rows = maxRows > 0 && maxRows < height ? maxRows : height;
+        if (format == kFormatCmpr) {
+            return decode_cmpr(anim.data() + data, anim.size() - data, width, rows, img);
+        }
+        if (format == kFormatC8 && pal + 2 * static_cast<size_t>(palNum) <= anim.size()) {
+            return decode_c8(anim.data() + data, anim.size() - data, anim.data() + pal, palNum, width, rows, img);
+        }
+        return false;
     }
 
-    std::optional<aurora::rmlui::RuntimeTexture> provide(std::string_view source)
+    std::optional<aurora::rmlui::RuntimeTexture> serve(const ImageSet &set, std::string_view source)
     {
-        // "portrait://N"
+        // "<scheme>://N"
         const auto pos = source.find("://");
         if (pos == std::string_view::npos || pos + 4 != source.size()) {
             return std::nullopt;
         }
-        const int c = source[pos + 3] - '0';
-        if (c < 0 || c >= kChars || gPortraits[c].rgba.empty()) {
+        const int n = source[pos + 3] - '0';
+        if (n < 0 || n >= static_cast<int>(set.images.size()) || set.images[n].rgba.empty()) {
             return std::nullopt;
         }
+        const Image &img = set.images[n];
         aurora::rmlui::RuntimeTexture tex;
-        tex.width = kSize;
-        tex.height = kSize;
-        tex.rgba8 = gPortraits[c].rgba;
-        tex.generateMipmaps = true; // drawn smaller than 64 px
+        tex.width = static_cast<uint32_t>(img.width);
+        tex.height = static_cast<uint32_t>(img.height);
+        tex.rgba8 = img.rgba;
+        tex.generateMipmaps = true; // drawn smaller than their native size
         return tex;
+    }
+
+    // Loads `set` with `load` (which fills the images from the disc image) once per disc image.
+    bool ensure(ImageSet &set, const std::function<bool(const std::string &, std::vector<Image> &)> &load)
+    {
+        const std::string iso = getSettings().backend.isoPath.getValue();
+        if (iso.empty()) {
+            return false;
+        }
+        if (iso == set.loadedFrom) {
+            return true;
+        }
+        if (iso == set.failedFor) {
+            return false;
+        }
+        std::vector<Image> images;
+        if (!load(iso, images)) {
+            std::printf("[ui] %s pictures unavailable: couldn't read them from the disc image\n", set.scheme);
+            set.failedFor = iso;
+            return false;
+        }
+        set.images = std::move(images);
+        set.loadedFrom = iso;
+        set.failedFor.clear();
+        if (!set.registered) {
+            aurora::rmlui::register_texture_provider(set.scheme,
+                [&set](std::string_view source) { return serve(set, source); });
+            set.registered = true;
+        }
+        return true;
     }
 
 } // namespace
 
 bool ensure_loaded()
 {
-    const std::string iso = getSettings().backend.isoPath.getValue();
-    if (iso.empty()) {
-        return false;
-    }
-    if (iso == gLoadedFrom) {
-        return true;
-    }
-    if (iso == gFailedFor) {
-        return false;
-    }
-    auto archive = read_disc_file(iso, "data/board.bin");
-    int loaded = 0;
-    std::array<Portrait, kChars> portraits;
-    if (archive) {
-        for (int c = 0; c < kChars; c++) {
-            if (auto anim = archive_entry(*archive, kFirstEntry + c); anim && decode_face(*anim, portraits[c].rgba)) {
-                loaded++;
+    return ensure(gPortraits, [](const std::string &iso, std::vector<Image> &images) {
+        constexpr int kFirstEntry = 0x2E; // one face sprite per character id, in id order
+        constexpr int kFrame = 64;        // each stacks three 64x64 expressions; the top one is neutral
+        auto archive = read_disc_file(iso, "data/board.bin");
+        if (!archive) {
+            return false;
+        }
+        images.resize(8);
+        for (int c = 0; c < 8; c++) {
+            auto anim = archive_entry(*archive, kFirstEntry + c);
+            if (!anim || !decode_bitmap(*anim, 0, kFrame, images[c]) || images[c].width != kFrame) {
+                return false;
             }
         }
-    }
-    if (loaded != kChars) {
-        std::printf("[ui] character portraits unavailable (%d of %d read from the disc image)\n", loaded, kChars);
-        gFailedFor = iso;
-        return false;
-    }
-    gPortraits = std::move(portraits);
-    gLoadedFrom = iso;
-    gFailedFor.clear();
-    if (!gProviderRegistered) {
-        aurora::rmlui::register_texture_provider("portrait", provide);
-        gProviderRegistered = true;
-    }
-    return true;
+        return true;
+    });
+}
+
+bool ensure_boards_loaded()
+{
+    return ensure(gBoards, [](const std::string &iso, std::vector<Image> &images) {
+        // Party menu board pictures: entry 0x3C holds frames (bitmaps 0-4) and boards 0-4
+        // (bitmaps 5-9); Bowser's board, unlocked later in the game, is entry 0x3E bitmap 1.
+        auto archive = read_disc_file(iso, "data/ment.bin");
+        if (!archive) {
+            return false;
+        }
+        auto main = archive_entry(*archive, 0x3C);
+        auto bowser = archive_entry(*archive, 0x3E);
+        if (!main || !bowser) {
+            return false;
+        }
+        images.resize(6);
+        for (int board = 0; board < 5; board++) {
+            if (!decode_bitmap(*main, 5 + board, 0, images[board])) {
+                return false;
+            }
+        }
+        return decode_bitmap(*bowser, 1, 0, images[5]);
+    });
 }
 
 } // namespace partyboard::ui::portraits

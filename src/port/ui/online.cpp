@@ -54,18 +54,20 @@ namespace {
         std::function<Rml::String()> mGetText;
     };
 
-    // A character row: the character's face from the disc (if it could be read), then a live label.
-    class PortraitButton : public ControlledButton {
+    // A list row with a picture from the disc (if it could be read) before its live label.
+    // cssClass sets the picture size (see window.rcss).
+    class PictureButton : public ControlledButton {
     public:
-        PortraitButton(Rml::Element *parent, int character, std::function<Rml::String()> getText,
-            std::function<bool()> isSelected)
+        PictureButton(Rml::Element *parent, Rml::String imageSrc, bool hasImage, const char *cssClass,
+            std::function<Rml::String()> getText, std::function<bool()> isSelected)
             : ControlledButton(parent, { getText(), std::move(isSelected) })
-            , mCharacter(character)
+            , mImageSrc(std::move(imageSrc))
+            , mHasImage(hasImage)
             , mGetText(std::move(getText))
         {
-            mHasPortrait = portraits::ensure_loaded();
-            if (mHasPortrait) {
-                root()->SetClass("portrait-button", true);
+            if (mHasImage) {
+                root()->SetClass("picture-button", true);
+                root()->SetClass(cssClass, true);
             }
             refresh();
         }
@@ -79,7 +81,7 @@ namespace {
         void refresh()
         {
             const auto text = mGetText();
-            if (!mHasPortrait) {
+            if (!mHasImage) {
                 set_text(text);
                 return;
             }
@@ -87,16 +89,43 @@ namespace {
                 return;
             }
             mShown = text;
-            root()->SetInnerRML("<img src=\"portrait://" + std::to_string(mCharacter) + "\"/><span>" + escape(text) +
-                "</span>");
+            root()->SetInnerRML("<img src=\"" + mImageSrc + "\"/><span>" + escape(text) + "</span>");
         }
 
-        int mCharacter;
-        bool mHasPortrait = false;
+        Rml::String mImageSrc;
+        bool mHasImage;
         Rml::String mShown;
+        std::function<Rml::String()> mGetText;
+    };
+
+    // A picture that follows a setting (e.g. the chosen board), shown at the top of a right pane.
+    class LivePicture : public Component {
+    public:
+        LivePicture(Rml::Element *parent, const char *cssClass, std::function<Rml::String()> getSrc)
+            : Component(append(parent, "div"))
+            , mGetSrc(std::move(getSrc))
+        {
+            mRoot->SetClass(cssClass, true);
+            refresh();
+        }
+        void update() override
+        {
+            refresh();
+            Component::update();
+        }
 
     private:
-        std::function<Rml::String()> mGetText;
+        void refresh()
+        {
+            const auto src = mGetSrc();
+            if (src != mShown) {
+                mShown = src;
+                mRoot->SetInnerRML("<img src=\"" + src + "\"/>");
+            }
+        }
+
+        std::function<Rml::String()> mGetSrc;
+        Rml::String mShown;
     };
 
     Rml::String default_name()
@@ -300,11 +329,17 @@ OnlineWindow::OnlineWindow()
                                       },
                                   }),
             rightPane, [](Pane &pane) {
+                const bool pictures = portraits::ensure_boards_loaded();
+                if (pictures) {
+                    pane.add_child<LivePicture>("board-preview", [] {
+                        const int board = getSettings().netplay.board.getValue();
+                        return "board://" + std::to_string(board >= 0 && board < 6 ? board : 0);
+                    });
+                }
                 for (int i = 0; i < static_cast<int>(kBoardNames.size()); i++) {
-                    pane.add_button({
-                                        .text = kBoardNames[i],
-                                        .isSelected = [i] { return getSettings().netplay.board.getValue() == i; },
-                                    })
+                    pane.add_child<PictureButton>("board://" + std::to_string(i), pictures, "board-button",
+                            [i] { return Rml::String(kBoardNames[i]); },
+                            [i] { return getSettings().netplay.board.getValue() == i; })
                         .on_pressed([i] {
                             getSettings().netplay.board.setValue(i);
                             save();
@@ -410,10 +445,11 @@ OnlineWindow::OnlineWindow()
                                       },
                                   }),
             rightPane, [](Pane &pane) {
+                const bool pictures = portraits::ensure_loaded();
                 pane.add_rml("Your character. Nobody can pick one someone else already has; CPUs marked "
                              "<i>auto</i> give theirs up. Remembered for next time.");
                 for (int c = 0; c < kChars; c++) {
-                    pane.add_child<PortraitButton>(c,
+                    pane.add_child<PictureButton>("portrait://" + std::to_string(c), pictures, "portrait-button",
                             [c] {
                                 const auto holder = holder_of(c);
                                 return holder.empty() ? char_name(c) : char_name(c) + "  (" + holder + ")";
