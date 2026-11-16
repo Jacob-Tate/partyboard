@@ -68,6 +68,21 @@ s32 CharFXPlay(s16 charNo, s16 seId);
 s32 CharFXPlayPos(s16 charNo, s16 seId, Vec *pos);
 void CharFXStop(s16 charNo, s16 seId);
 
+#ifdef TARGET_PC
+// Mario Party 5's own sound bank, loaded while an MP5 minigame port runs (see audio.c). These take MP5's
+// sound ids, as the MP5 decompilation writes them, and play them untranslated. CharFX ids are relative to
+// Mario's (MSM_SE_MARIO / MSM_SE_VOICE_MARIO), as in MP5.
+BOOL HuAudMp5BankActive(void);
+int HuAudMp5FXPlay(int seId);
+int HuAudMp5FXPlayVol(int seId, s16 vol);
+int HuAudMp5FXPlayPan(int seId, s16 pan);
+int HuAudMp5FXPlayVolPan(int seId, s16 vol, s16 pan);
+int HuAudMp5FXEmiterPlay(int seId, Vec *pos);
+s32 HuAudMp5CharFXPlayVolPan(s16 charNo, s16 seId, s16 vol, s16 pan);
+s32 HuAudMp5CharFXPlayPos(s16 charNo, s16 seId, Vec *pos);
+void HuAudMp5CharFXStop(s16 charNo, s16 seId);
+#endif
+
 SHARED_SYM extern SNDGRPTBL sndGrpTable[];
 
 extern float Snd3DBackSurDisOffset;

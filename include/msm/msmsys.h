@@ -80,5 +80,8 @@ s32 msmSysLoadGroupBase(s32 arg0, void *arg1);
 s32 msmSysLoadGroupSet(s32 arg0, void *arg1);
 void msmSysCheckInit(void);
 s32 msmSysInit(MSM_INIT *init, MSM_ARAM *aram);
+#ifdef TARGET_PC
+s32 msmSysSwitchFile(char *msmPath, char *pdtPath);
+#endif
 
 #endif

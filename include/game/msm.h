@@ -160,6 +160,9 @@ typedef struct msmStreamParam_s {
 } MSM_STREAMPARAM;
 
 s32 msmSysInit(MSM_INIT *init, MSM_ARAM *aram);
+#ifdef TARGET_PC
+s32 msmSysSwitchFile(char *msmPath, char *pdtPath);
+#endif
 BOOL msmSysSetOutputMode(SND_OUTPUTMODE mode);
 s32 msmSysDelGroupAll(void);
 s32 msmSysGetSampSize(BOOL baseGrp);

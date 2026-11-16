@@ -774,6 +774,15 @@ EXPORTS
     HuAudFXPlay
     HuAudFXPlayVol
     HuAudFXPlayVolPan
+    HuAudMp5BankActive
+    HuAudMp5FXPlay
+    HuAudMp5FXPlayVol
+    HuAudMp5FXPlayPan
+    HuAudMp5FXPlayVolPan
+    HuAudMp5FXEmiterPlay
+    HuAudMp5CharFXPlayVolPan
+    HuAudMp5CharFXPlayPos
+    HuAudMp5CharFXStop
     HuAudFXStatusGet
     HuAudFXStop
     HuAudFXVolSet

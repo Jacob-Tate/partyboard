@@ -16,6 +16,7 @@
 #include "game/gamework_data.h"
 #include "game/hsfformat.h"
 #include "game/hu3d.h"
+#include "game/msm.h"
 #include "game/memory.h"
 #include "game/minigame_seq.h"
 #include "game/object.h"
@@ -104,9 +105,26 @@ typedef s16 GAMEMESID;
 #define GameMesKill(id) MGSeqKill(id)
 #define GameMesClose() MGSeqKillAll()
 
-// Jingles are MP4 streams: 1 = win, 4 = draw.
-#define MP5_JINGLE_WIN 1
-#define MP5_JINGLE_DRAW 4
+// Sound: while a port runs, MSM has Mario Party 5's own sound file loaded (game/audio.c), so the MP5 ids
+// below (and the decompilation's) play as they did in MP5.
+#include "mp5/msm_grp.h"
+#include "mp5/msm_se.h"
+#include "mp5/msm_stream.h"
+#define MSM_SENO_NONE -1
+#define MSM_STREAMNO_NONE -1
+#define HuAudFXPlay(seId) HuAudMp5FXPlay(seId)
+#define HuAudFXPlayVol(seId, vol) HuAudMp5FXPlayVol((seId), (vol))
+#define HuAudFXPlayPan(seId, pan) HuAudMp5FXPlayPan((seId), (pan))
+#define HuAudFXPlayVolPan(seId, vol, pan) HuAudMp5FXPlayVolPan((seId), (vol), (pan))
+#define HuAudFXEmiterPlay(seId, pos) HuAudMp5FXEmiterPlay((seId), (pos))
+#define CharFXPlay(charNo, seId) HuAudMp5CharFXPlayVolPan((charNo), (seId), MSM_VOL_MAX, MSM_PAN_CENTER)
+#define CharFXPlayVol(charNo, seId, vol) HuAudMp5CharFXPlayVolPan((charNo), (seId), (vol), MSM_PAN_CENTER)
+#define CharFXPlayPan(charNo, seId, pan) HuAudMp5CharFXPlayVolPan((charNo), (seId), MSM_VOL_MAX, (pan))
+#define CharFXPlayVolPan(charNo, seId, vol, pan) HuAudMp5CharFXPlayVolPan((charNo), (seId), (vol), (pan))
+#define CharFXPlayPos(charNo, seId, pos) HuAudMp5CharFXPlayPos((charNo), (seId), (pos))
+#define CharFXStop(charNo, seId) HuAudMp5CharFXStop((charNo), (seId))
+#define HuAudJinglePlay(streamId) HuAudSStreamPlay(streamId)
+#define HuAudBGMPlay(streamId) HuAudSStreamPlay(streamId)
 
 // Voice panning has no MP4 counterpart.
 #define CharModelVoicePanSet(charNo, pan) ((void)(charNo), (void)(pan))

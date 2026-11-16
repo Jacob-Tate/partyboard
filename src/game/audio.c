@@ -17,6 +17,11 @@
 #define PDT_FILE_PATH "/sound/mpgcstr.pdt"
 
 static int HuSePlay(int seId, MSM_SEPARAM *param);
+#ifdef TARGET_PC
+static BOOL HuAudMp5OvlSet(s16 ovl);
+static BOOL sndMp5Bank; // Mario Party 5's sound file is loaded
+static s32 sndMp5Raw; // > 0 while an MP5 port plays an MP5 sound id
+#endif
 
 s32 charVoiceGroupStat[8];
 static s32 sndFXBuf[64][2];
@@ -425,8 +430,6 @@ SNDGRPTBL sndGrpTable[] = {
     { DLL_m461dll, MSM_GRPSET_MG461, MSM_AUXA_DEFAULT, MSM_AUXB_DEFAULT, -1, -1 },
     { DLL_m462dll, MSM_GRPSET_MG462, MSM_AUXA_DEFAULT, MSM_AUXB_DEFAULT, -1, -1 },
     { DLL_m463dll, MSM_GRPSET_MG463, MSM_AUXA_DEFAULT, MSM_AUXB_DEFAULT, -1, -1 },
-    { DLL_m507dll, MSM_GRPSET_MG438, MSM_AUXA_DEFAULT, 11, -1, -1 }, // MP5 port: Chain Chomp Fever sounds
-    { DLL_m526dll, MSM_GRPSET_MG440, MSM_AUXA_DEFAULT, MSM_AUXB_DEFAULT, -1, -1 }, // MP5 port: Bowser's Bigger Blast sounds
     { DLL_mentdll, MSM_GRPSET_NONE, MSM_AUXA_DEFAULT, MSM_AUXB_DEFAULT, -1, -1 },
     { DLL_mgmodedll, MSM_GRPSET_CMN, MSM_AUXA_DEFAULT, MSM_AUXB_DEFAULT, -1, -1 },
     { DLL_modeseldll, MSM_GRPSET_INIT, MSM_AUXA_DEFAULT, MSM_AUXB_DEFAULT, -1, -1 },
@@ -460,6 +463,12 @@ SNDGRPTBL sndGrpTable[] = {
 void HuAudDllSndGrpSet(u16 ovl) {
     SNDGRPTBL *sndGrpP;
     s16 grpSet;
+
+#ifdef TARGET_PC
+    if (sndMp5Bank) {
+        return; // HuAudSndCharGrpSet (called first) loaded the MP5 port's groups
+    }
+#endif
 
     sndGrpP = sndGrpTable;
     while (1) {
@@ -585,6 +594,11 @@ void HuAudSndCharGrpSet(s16 ovl) {
     void *buf;
     s16 i;
 
+#ifdef TARGET_PC
+    if (HuAudMp5OvlSet(ovl)) {
+        return;
+    }
+#endif
     if (ovl != DLL_NONE) {
         sndGrpP = sndGrpTable;
         while (1) {
@@ -707,9 +721,258 @@ void CharFXStop(s16 charNo, s16 seId) {
     }
 }
 
+#ifdef TARGET_PC
+// ---- Mario Party 5's sound bank ----------------------------------------------------------------------
+// The MP5 minigame ports play MP5's own sounds and music: entering one swaps MSM over to MP5_SND.msm and
+// MP5_Str.pdt from the user's MP5 image (port/mp5disc.h), and the next MP4 overlay swaps back.
+
+#define MP5_MSM_FILE_PATH "/mp5/sound/MP5_SND.msm"
+#define MP5_PDT_FILE_PATH "/mp5/sound/MP5_Str.pdt"
+
+// MP5's group for each port (its msm_grp.h MSM_GRP_MG5xx).
+static const s16 mp5SndGrpTbl[][2] = {
+    { DLL_m507dll, 27 },
+    { DLL_m526dll, 46 },
+    { DLL_NONE, -1 },
+};
+
+// MP5's character data by MP4 character (DK isn't in MP5: no voice).
+static const s16 mp5CharNoTbl[8] = { 0, 1, 2, 3, 4, -1, 5, 6 };
+static const s16 mp5CharGrpTbl[7] = { 10, 11, 12, 13, 14, 16, 17 };
+static const s16 mp5CharSeTbl[7] = { 142, 112, 292, 412, 352, 52, 382 }; // MSM_SE_<char>
+static const s16 mp5CharVoiceSeTbl[7] = { 502, 482, 602, 682, 642, 442, 662 }; // MSM_SE_VOICE_<char>
+#define MP5_SE_MARIO 142
+#define MP5_SE_VOICE_MARIO 502
+
+static s16 HuAudMp5OvlGrp(s16 ovl)
+{
+    s32 i;
+    for (i = 0; mp5SndGrpTbl[i][0] != DLL_NONE; i++) {
+        if (mp5SndGrpTbl[i][0] == ovl) {
+            return mp5SndGrpTbl[i][1];
+        }
+    }
+    return -1;
+}
+
+static BOOL HuAudBankSwitch(BOOL mp5)
+{
+    void *buf;
+    s32 result;
+    s16 i;
+
+    result = msmSysSwitchFile(mp5 ? MP5_MSM_FILE_PATH : MSM_FILE_PATH, mp5 ? MP5_PDT_FILE_PATH : PDT_FILE_PATH);
+    if (result < 0) {
+        OSReport("Sound file switch (%s) failed: %d\n", mp5 ? "MP5" : "MP4", result);
+        return FALSE;
+    }
+    sndMp5Bank = mp5;
+    OSReport("Sound file: %s\n", mp5 ? MP5_MSM_FILE_PATH : MSM_FILE_PATH);
+    buf = HuMemDirectMalloc(HEAP_DATA, msmSysGetSampSize(0));
+    msmSysLoadGroup(0, buf, 0);
+    HuMemDirectFree(buf);
+    for (i = 0; i < 8; i++) {
+        charVoiceGroupStat[i] = 0;
+    }
+    sndGroupBak = MSM_GRPSET_NONE;
+    auxANoBak = auxBNoBak = -1;
+    HuAuxAVol = HuAuxBVol = -1;
+    return TRUE;
+}
+
+// Called for every overlay about to start. An MP5 port gets MP5's sound file, its characters' sounds and
+// its own group (returns TRUE); anything else gets MP4's file back if MP5's was loaded (returns FALSE).
+static BOOL HuAudMp5OvlSet(s16 ovl)
+{
+    void *buf;
+    s16 grp = HuAudMp5OvlGrp(ovl);
+    s16 loaded[7] = { 0 };
+    s16 charNo;
+    s16 i;
+
+    if (grp < 0) {
+        if (sndMp5Bank && !HuAudBankSwitch(FALSE)) {
+            OSPanic("audio.c", __LINE__, "can't reload Mario Party 4's sound file\n");
+        }
+        return FALSE;
+    }
+    if (!sndMp5Bank && !HuAudBankSwitch(TRUE)) {
+        HuAudBankSwitch(FALSE);
+        return TRUE; // no MP5 sounds: the port plays silently rather than with MP4's ids
+    }
+    for (i = 0; i < GW_PLAYER_MAX; i++) {
+        charNo = GWPlayerCfg[i].character;
+        charNo = (charNo >= 0 && charNo < 8) ? mp5CharNoTbl[charNo] : -1;
+        if (charNo >= 0 && !loaded[charNo]) {
+            loaded[charNo] = 1;
+            buf = HuMemDirectMalloc(HEAP_DATA, msmSysGetSampSize(mp5CharGrpTbl[charNo]));
+            msmSysLoadGroupBase(mp5CharGrpTbl[charNo], buf);
+            HuMemDirectFree(buf);
+        }
+    }
+    buf = HuMemDirectMalloc(HEAP_DATA, msmSysGetSampSize(grp));
+    if (msmSysLoadGroup(grp, buf, 0) != 0) {
+        OSReport("MP5 sound group %d failed to load\n", grp);
+    }
+    HuMemDirectFree(buf);
+    msmSysSetAux(MSM_AUXA_DEFAULT, MSM_AUXB_DEFAULT);
+    return TRUE;
+}
+
+BOOL HuAudMp5BankActive(void)
+{
+    return sndMp5Bank;
+}
+
+// MP4's own code (minigame banners, menus) keeps playing MP4 ids while MP5's file is loaded. The two games
+// share the low common ids; MP4's banner sounds 36-40 are MP5's 25-28. Anything else has no counterpart.
+static int HuAudMp4SeToMp5(int seId)
+{
+    switch (seId) {
+        case 36:
+            return 25;
+        case 37:
+            return 26;
+        case 38:
+            return 27;
+        case 40:
+            return 28;
+    }
+    return seId < 32 ? seId : -1;
+}
+
+#define MP5_RAW(expr)    \
+    do {                 \
+        sndMp5Raw++;     \
+        result = (expr); \
+        sndMp5Raw--;     \
+    } while (0)
+
+int HuAudMp5FXPlay(int seId)
+{
+    int result;
+    MP5_RAW(HuAudFXPlay(seId));
+    return result;
+}
+
+int HuAudMp5FXPlayVol(int seId, s16 vol)
+{
+    int result;
+    MP5_RAW(HuAudFXPlayVol(seId, vol));
+    return result;
+}
+
+int HuAudMp5FXPlayPan(int seId, s16 pan)
+{
+    int result;
+    MP5_RAW(HuAudFXPlayVolPan(seId, MSM_VOL_MAX, pan));
+    return result;
+}
+
+int HuAudMp5FXPlayVolPan(int seId, s16 vol, s16 pan)
+{
+    int result;
+    MP5_RAW(HuAudFXPlayVolPan(seId, vol, pan));
+    return result;
+}
+
+int HuAudMp5FXEmiterPlay(int seId, Vec *pos)
+{
+    int result;
+    MP5_RAW(HuAudFXEmiterPlay(seId, pos));
+    return result;
+}
+
+static s16 HuAudMp5CharSeId(s16 charNo, s16 seId)
+{
+    charNo = (charNo >= 0 && charNo < 8) ? mp5CharNoTbl[charNo] : -1;
+    if (charNo < 0) {
+        return -1;
+    }
+    if (seId < MP5_SE_VOICE_MARIO) {
+        return seId - MP5_SE_MARIO + mp5CharSeTbl[charNo];
+    }
+    return seId - MP5_SE_VOICE_MARIO + mp5CharVoiceSeTbl[charNo];
+}
+
+s32 HuAudMp5CharFXPlayVolPan(s16 charNo, s16 seId, s16 vol, s16 pan)
+{
+    MSM_SEPARAM param;
+    s32 result;
+
+    seId = HuAudMp5CharSeId(charNo, seId);
+    if (omSysExitReq || seId < 0) {
+        return 0;
+    }
+    param.flag = MSM_SEPARAM_VOL | MSM_SEPARAM_PAN;
+    if (HuAuxAVol != -1) {
+        param.flag |= MSM_SEPARAM_AUXVOLA;
+    }
+    if (HuAuxBVol != -1) {
+        param.flag |= MSM_SEPARAM_AUXVOLB;
+    }
+    param.auxAVol = HuAuxAVol;
+    param.auxBVol = HuAuxBVol;
+    param.vol = vol;
+    param.pan = pan;
+    MP5_RAW(HuSePlay(seId, &param));
+    return result;
+}
+
+s32 HuAudMp5CharFXPlayPos(s16 charNo, s16 seId, Vec *pos)
+{
+    MSM_SEPARAM param;
+    s32 result;
+
+    seId = HuAudMp5CharSeId(charNo, seId);
+    if (omSysExitReq || seId < 0) {
+        return 0;
+    }
+    param.flag = MSM_SEPARAM_POS;
+    if (HuAuxAVol != -1) {
+        param.flag |= MSM_SEPARAM_AUXVOLA;
+    }
+    if (HuAuxBVol != -1) {
+        param.flag |= MSM_SEPARAM_AUXVOLB;
+    }
+    param.auxAVol = HuAuxAVol;
+    param.auxBVol = HuAuxBVol;
+    param.pos.x = pos->x;
+    param.pos.y = pos->y;
+    param.pos.z = pos->z;
+    MP5_RAW(HuSePlay(seId, &param));
+    return result;
+}
+
+void HuAudMp5CharFXStop(s16 charNo, s16 seId)
+{
+    int entrySeNo[MSM_ENTRY_SENO_MAX];
+    u16 entryNum;
+    u16 i;
+
+    seId = HuAudMp5CharSeId(charNo, seId);
+    if (seId < 0) {
+        return;
+    }
+    entryNum = msmSeGetEntryID(seId, entrySeNo);
+    for (i = 0; i < entryNum; i++) {
+        msmSeStop(entrySeNo[i], 0);
+    }
+}
+#endif
+
 static int HuSePlay(int seId, MSM_SEPARAM *param)
 {
     s32 result;
+
+#ifdef TARGET_PC
+    if (sndMp5Bank && sndMp5Raw == 0) {
+        seId = HuAudMp4SeToMp5(seId);
+        if (seId < 0) {
+            return -1;
+        }
+    }
+#endif
 
     result = msmSePlay(seId, param);
     if (result < 0) {

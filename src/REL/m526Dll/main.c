@@ -33,28 +33,6 @@ enum {
     M526_ANM_split
 };
 
-// Sound: MP5's bank isn't loaded; these are stand-ins from Bowser's Bigger Blast (m440), whose group
-// this overlay loads (sndGrpTable).
-#define MSM_SENO_NONE -1
-#define MSM_SE_GUIDE_26 0x70E // intro
-#define MSM_SE_M526_01 0x710 // the big Bob-omb explodes at the start
-#define MSM_SE_M526_02 0x710 // a team's King Bob-omb explodes (left / right)
-#define MSM_SE_M526_03 0x710
-#define MSM_SE_M526_04 0x709 // fuse burning (left / right)
-#define MSM_SE_M526_05 0x709
-#define MSM_SE_M526_06 0x70B // a fuse is stamped out (left / right)
-#define MSM_SE_M526_07 0x70B
-#define MSM_SE_M526_08 0x710 // both King Bob-ombs explode
-
-static int HuAudFXPlayPan(int seId, s16 pan)
-{
-    int id = HuAudFXPlay(seId);
-    if (id >= 0) {
-        HuAudFXPanning(id, pan);
-    }
-    return id;
-}
-
 // MP5's landing dust: MP4's smoke puff at the feet.
 #define CharModelLandDustCreate(charNo, pos) CharEffectSmokeCreate(HU3D_CAM_ALL, (pos))
 
@@ -679,7 +657,7 @@ static void M526GameFlowStart(M526_GAMEFLOW *gameflow)
     for(i=0; i<2; i++) {
         M526StageShadowOff(StageObj[i]);
     }
-    GameStreamNo = HuAudSeqPlay(0x49); // MP5 stream MGMUS_22 -> an MP4 minigame tune
+    GameStreamNo = HuAudSStreamPlay(MSM_STREAM_MGMUS_22);
     WipeCreate(WIPE_MODE_IN, WIPE_TYPE_PREVTYPE, 60);
     while(WipeCheckEnd()) {
         SLEEP_MODECHG(M526_GAMEFLOW, 1);
@@ -740,14 +718,14 @@ static void M526GameFlowFinish(M526_GAMEFLOW *gameflow)
     float splitTime;
     float split;
     
-    HuAudSeqFadeOut(GameStreamNo, 100);
+    HuAudSStreamFadeOut(GameStreamNo, 100);
     GameMesId = GameMesMgFinishCreate();
     while(GameMesStatGet(GameMesId)) {
         SLEEP_MODECHG(M526_GAMEFLOW, 1);
     }
     if(!GameActiveF[0] && !GameActiveF[1]) {
         SLEEP_MODECHG(M526_GAMEFLOW, 90);
-        HuAudSStreamPlay(MP5_JINGLE_DRAW);
+        HuAudJinglePlay(MSM_STREAM_JNGL_MG_DRAW);
         GameMesId = GameMesMgDrawCreate();
     } else {
         side = (GameActiveF[0]) ? 0 : 1;
@@ -795,7 +773,7 @@ static void M526GameFlowFinish(M526_GAMEFLOW *gameflow)
         zoom = 1200;
         M526CameraMoveSet(CameraObj[side], &center, &rot, &zoom, 70);
         SLEEP_MODECHG(M526_GAMEFLOW, 70);
-        HuAudSStreamPlay(MP5_JINGLE_WIN);
+        HuAudJinglePlay(MSM_STREAM_JNGL_MG_WIN);
         GameMesId = GameMesMgWinnerCreate(PlayerObj[side][0]->charNo, PlayerObj[side][1]->charNo, GAMEMES_MG_WINNER_NONE, GAMEMES_MG_WINNER_NONE);
         M526PlayerWinnerSet(PlayerObj[side][0]);
         M526PlayerWinnerSet(PlayerObj[side][1]);

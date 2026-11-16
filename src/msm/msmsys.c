@@ -15,6 +15,10 @@
 #endif
 
 static MSM_SYS sys;
+#ifdef TARGET_PC
+static void *sysHeap; // msmSysInit's heap, reused by msmSysSwitchFile
+static s32 sysHeapSize;
+#endif
 
 #ifdef BYTESWAPPING
 static void msmSysByteswapHeader(MSM_HEADER *header)
@@ -884,6 +888,10 @@ s32 msmSysInit(MSM_INIT *init, MSM_ARAM *aram)
     }
     result = 0; // retErr
     sys.irqDepth = 0;
+#ifdef TARGET_PC
+    sysHeap = init->heap;
+    sysHeapSize = init->heapSize;
+#endif
     msmMemInit(init->heap, init->heapSize);
     msmFioInit(init->open, init->read, init->close);
     sys.msmEntryNum = DVDConvertPathToEntrynum(init->msmPath);
@@ -997,7 +1005,13 @@ s32 msmSysInit(MSM_INIT *init, MSM_ARAM *aram)
 #else
     sndSetHooks(&sndHooks);
 #endif
+#ifdef TARGET_PC
+    // Room for either sound file msmSysSwitchFile may load: MP4's (50 voices: 32 music, 18 sfx) or
+    // Mario Party 5's (32 voices, all sfx; its music is streamed).
+    if (sndInit(64, 32, 32, 1, 0, sys.info->aramSize) != 0) {
+#else
     if (sndInit(sys.info->voices, sys.info->music, sys.info->sfx, 1, 0, sys.info->aramSize) != 0) {
+#endif
         return MSM_ERR_INITFAIL;
     }
     sys.oldAIDCallback = AIRegisterDMACallback(msmSysServer);
@@ -1029,3 +1043,124 @@ s32 msmSysInit(MSM_INIT *init, MSM_ARAM *aram)
 #endif
     return 0;
 }
+
+#ifdef TARGET_PC
+static void msmSysShutdownAux(void)
+{
+    s32 i;
+    sndSetAuxProcessingCallbacks(0, NULL, NULL, 0xFF, 0, NULL, NULL, 0xFF, 0);
+    for (i = 0; i < 2; i++) {
+        if (sys.auxParamNo[i] < 0 || sys.auxParam == NULL) {
+            continue;
+        }
+        switch (sys.auxParam[sys.auxParamNo[i]].type) {
+            case MSM_AUX_REVERBHI:
+                sndAuxCallbackShutdownReverbHI(&sys.aux[i].revHi);
+                break;
+            case MSM_AUX_REVERBSTD:
+                sndAuxCallbackShutdownReverbSTD(&sys.aux[i].revStd);
+                break;
+            case MSM_AUX_CHORUS:
+                sndAuxCallbackShutdownChorus(&sys.aux[i].chorus);
+                break;
+            case MSM_AUX_DELAY:
+                sndAuxCallbackShutdownDelay(&sys.aux[i].delay);
+                break;
+        }
+    }
+}
+
+// Replaces the loaded sound file (and stream file) with another of the same format while MusyX keeps
+// running: every sound stops, every group is unloaded, and the new file's tables are read into the same
+// heap. Base groups are not loaded: call msmSysLoadGroup(0, ...) after. Used to play Mario Party 5's own
+// sound bank during the MP5 minigame ports (game/audio.c).
+s32 msmSysSwitchFile(char *msmPath, char *pdtPath)
+{
+    DVDFileInfo file;
+    s32 entryNum;
+    s32 result;
+
+    entryNum = DVDConvertPathToEntrynum(msmPath);
+    if (entryNum < 0) {
+        return MSM_ERR_OPENFAIL;
+    }
+    msmStreamStopAll(0);
+    partyboard_audio_drop_reads(); // a stream read in flight would land in the freed buffers
+    msmSysIrqDisable();
+    msmSeStopAll(FALSE, 0);
+    msmMusStopAll(FALSE, 0);
+    sndSilence();
+    while (sndPopGroup()) {
+    }
+    msmStreamAmemFree();
+    msmSysShutdownAux();
+    sys.auxParam = NULL;
+
+    msmMemInit(sysHeap, sysHeapSize);
+    sys.msmEntryNum = entryNum;
+    result = MSM_ERR_OPENFAIL;
+    if (msmFioOpen(sys.msmEntryNum, &file) != TRUE) {
+        goto done;
+    }
+    result = MSM_ERR_OUTOFMEM;
+    if ((sys.header = msmMemAlloc(0x60)) == NULL) {
+        goto close;
+    }
+    result = MSM_ERR_READFAIL;
+    if (msmFioRead(&file, sys.header, 0x60, 0) < 0) {
+        goto close;
+    }
+#ifdef BYTESWAPPING
+    msmSysByteswapHeader(sys.header);
+#endif
+    result = MSM_ERR_INVALIDFILE;
+    if (sys.header->version != MSM_FILE_VERSION) {
+        goto close;
+    }
+    result = MSM_ERR_OUTOFMEM;
+    if ((sys.info = msmMemAlloc(sys.header->infoSize)) == NULL) {
+        goto close;
+    }
+    result = MSM_ERR_READFAIL;
+    if (msmFioRead(&file, sys.info, sys.header->infoSize, sys.header->infoOfs) < 0) {
+        goto close;
+    }
+#ifdef BYTESWAPPING
+    msmSysByteswapInfo(sys.info);
+#endif
+    if ((result = msmSysGroupInit(&file)) != 0 || (result = msmMusInit(&sys, &file)) != 0
+        || (result = msmSeInit(&sys, &file)) != 0) {
+        goto close;
+    }
+    sys.auxParamNo[0] = sys.info->auxParamA == MSM_AUXNO_NULL ? MSM_AUXNO_NULL : MSM_AUXNO_UNSET;
+    sys.auxParamNo[1] = sys.info->auxParamB == MSM_AUXNO_NULL ? MSM_AUXNO_NULL : MSM_AUXNO_UNSET;
+    if ((s32)sys.header->auxParamSize != 0) {
+        result = MSM_ERR_OUTOFMEM;
+        if ((sys.auxParam = msmMemAlloc(sys.header->auxParamSize)) == NULL) {
+            goto close;
+        }
+        result = MSM_ERR_READFAIL;
+        if (msmFioRead(&file, sys.auxParam, sys.header->auxParamSize, sys.header->auxParamOfs) < 0) {
+            goto close;
+        }
+#ifdef BYTESWAPPING
+        msmSysByteswapAuxParam(sys.auxParam, sys.header->auxParamSize);
+#endif
+    }
+    msmFioClose(&file);
+    if ((result = msmStreamInit(pdtPath)) < 0) {
+        goto done;
+    }
+    if ((result = msmStreamAmemAlloc()) < 0) {
+        goto done;
+    }
+    sys.aramP = result + 0x500;
+    result = msmSysSetAuxParam(sys.info->auxParamA, sys.info->auxParamB) != 0 ? MSM_ERR_INVALID_AUXPARAM : 0;
+    goto done;
+close:
+    msmFioClose(&file);
+done:
+    msmSysIrqEnable();
+    return result;
+}
+#endif

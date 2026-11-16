@@ -5,53 +5,6 @@
 
 #include "REL/m507Dll.h"
 
-// Sound: MP5's sound bank isn't loaded, so its effect ids map to MP4 sounds from Chain Chomp Fever
-// (m438, the same kind of hopping monster), whose group this overlay loads (sndGrpTable).
-// -1: no MP4 counterpart, stay silent.
-static int M507SeMap(int mp5SeId)
-{
-    switch (mp5SeId) {
-        case 0x678: // the monster lands at the start
-        case 0x67A: // ... and after each hop (even / odd players)
-        case 0x67B:
-        case 0x684: // its footsteps during the intro camera move
-            return 0x6FE;
-        case 0x2D8:
-            return 0x6FC;
-        case 0x67C: // scenery knocked over
-        case 0x67D:
-        case 0x67E:
-        case 0x67F:
-            return 0x6FB;
-        case 0x680: // a player is knocked away
-        case 0x681:
-            return 0x6FA;
-        case 0x682: // flashlight on
-        case 0x683:
-            return 0x6F9;
-        default:
-            return -1;
-    }
-}
-
-static int M507FXPlay(int seId)
-{
-    seId = M507SeMap(seId);
-    return seId < 0 ? -1 : HuAudFXPlay(seId);
-}
-
-static int M507FXPlayVol(int seId, s16 vol)
-{
-    seId = M507SeMap(seId);
-    return seId < 0 ? -1 : HuAudFXPlayVol(seId, vol);
-}
-
-static int M507FXPlayVolPan(int seId, s16 vol, s16 pan)
-{
-    seId = M507SeMap(seId);
-    return seId < 0 ? -1 : HuAudFXPlayVolPan(seId, vol, pan);
-}
-
 // Player motions: idle holding the flashlight (c000m1_347, kept in the character archive), shine (353),
 // win (306), lose (360), knocked away (376). DK uses MP4's idle, idle, win, lose, lose.
 static s16 M507MotionCreate(s16 charNo, s32 i)
@@ -356,13 +309,13 @@ void fn_1_4F0(omObjData *obj)
                 omVibrate(i, 0x1E, 0xC, 0);
                 fn_1_7770(1 << i, &lbl_1_bss_E14[i].unkC);
                 if (i == 0) {
-                    M507FXPlay(0x678);
+                    HuAudFXPlay(0x678);
                 }
                 fn_1_64A4(0, 0x1E, 25.0f, 0.95f, 90.0f);
                 fn_1_64F4(i, 4, 0);
                 HuPrcVSleep();
                 if (i == 0) {
-                    M507FXPlay(0x2D8);
+                    HuAudFXPlay(0x2D8);
                 }
                 Hu3DMotionSpeedSet(lbl_1_bss_10A4.unk8[i], 1.0f);
             }
@@ -537,13 +490,13 @@ void fn_1_1120(omObjData *temp_r30)
                         if ((temp_r31->unk0C % 2) == 0) {
                             if (temp_r31->unk04 != 0x682) {
                                 temp_r31->unk04 = 0x682;
-                                M507FXPlay(0x682);
+                                HuAudFXPlay(0x682);
                             }
                         }
                         else {
                             if (temp_r31->unk04 != 0x683) {
                                 temp_r31->unk04 = 0x683;
-                                M507FXPlay(0x683);
+                                HuAudFXPlay(0x683);
                             }
                         }
                         if (temp_r31->unk74 > 0.0f) {
@@ -604,20 +557,20 @@ void fn_1_1120(omObjData *temp_r30)
             if ((temp_r31->unk0C % 2) == 0) {
                 if (temp_r31->unk04 != 0x680) {
                     temp_r31->unk04 = 0x680;
-                    M507FXPlay(0x680);
+                    HuAudFXPlay(0x680);
                 }
             }
             else {
                 if (temp_r31->unk04 != 0x681) {
                     temp_r31->unk04 = 0x681;
-                    M507FXPlay(0x681);
+                    HuAudFXPlay(0x681);
                 }
             }
             if ((temp_r31->unk0C % 2) == 0) {
-                CharFXPlay(temp_r31->unk14, 0x123);
+                CharFXPlayPan(temp_r31->unk14, 0x1F9, 0x30);
             }
             else {
-                CharFXPlay(temp_r31->unk14, 0x123);
+                CharFXPlayPan(temp_r31->unk14, 0x1F9, 0x50);
             }
             Hu3DMotionShiftSet(temp_r30->model[0], temp_r30->motion[temp_r31->unk00], 0.0f, 8.0f, HU3D_MOTATTR_LOOP);
             temp_r31->unk48.y = fn_1_6468(0xF, 0x1E);
@@ -921,7 +874,7 @@ void fn_1_2E1C(omObjData *temp_r30)
             if (lbl_1_bss_122E[0] < 0) {
                 lbl_1_bss_122E[0] = MGSeqStartCreate();
                 if (lbl_1_bss_1228 < 0) {
-                    lbl_1_bss_1228 = HuAudSeqPlay(0x49); // MP5 stream 0x39 -> Chain Chomp Fever music
+                    lbl_1_bss_1228 = HuAudSStreamPlay(0x39);
                 }
             }
             else if (MGSeqStatGet(lbl_1_bss_122E[0]) == 0) {
@@ -943,7 +896,7 @@ void fn_1_2E1C(omObjData *temp_r30)
             lbl_1_bss_1080 = 1;
             if (lbl_1_bss_122E[0] < 0) {
                 lbl_1_bss_122E[0] = MGSeqFinishCreate();
-                HuAudSeqFadeOut(lbl_1_bss_1228, 0x64);
+                HuAudSStreamFadeOut(lbl_1_bss_1228, 0x64);
                 lbl_1_bss_1228 = -1;
             }
             else if (MGSeqStatGet(lbl_1_bss_122E[0]) == 0) {
@@ -1078,7 +1031,7 @@ s32 fn_1_3C2C(void)
     }
     if ((-1.0f == sp18[0]) && (-1.0f == sp18[1]) && (-1.0f == sp18[2]) && (-1.0f == sp18[3])) {
         lbl_1_bss_122E[0] = MGSeqDrawCreate();
-        HuAudSStreamPlay(4);
+        HuAudJinglePlay(MSM_STREAM_JNGL_MG_DRAW);
         return -1;
     }
     for (i = 0; i < 4; i++) {
@@ -1098,7 +1051,7 @@ s32 fn_1_3C2C(void)
         }
     }
     lbl_1_bss_122E[0] = MGSeqWinCreate(sp10[0], sp10[1], sp10[2], sp10[3]);
-    HuAudSStreamPlay(1);
+    HuAudJinglePlay(MSM_STREAM_JNGL_MG_WIN);
     for (i = 0; i < 4; i++) {
         temp_r31 = lbl_1_bss_111C[i]->data;
         if (sp10[temp_r31->unk0C] == -1) {
@@ -1265,10 +1218,10 @@ void fn_1_4268(void)
                     omVibrate(var_r31, ((s32)(33.0 - fabs(lbl_1_bss_E14[var_r31].unkC.z / 100.0f))) / 2, 0xC, 0);
                     fn_1_7770(1 << var_r31, &lbl_1_bss_E14[var_r31].unkC);
                     if ((var_r31 % 2) == 0) {
-                        M507FXPlayVol(0x67A, (s16)fn_1_668C(var_r31));
+                        HuAudFXPlayVol(0x67A, (s16)fn_1_668C(var_r31));
                     }
                     else {
-                        M507FXPlayVol(0x67B, (s16)fn_1_668C(var_r31));
+                        HuAudFXPlayVol(0x67B, (s16)fn_1_668C(var_r31));
                     }
                     fn_1_64A4(var_r31, 0x1E, 33.0 - fabs(lbl_1_bss_E14[var_r31].unkC.z / 100.0f), 0.95f, 90.0f);
                 }
@@ -1376,18 +1329,18 @@ void fn_1_527C(s32 arg0)
                 lbl_1_bss_4[var_r30][arg0].unk1C = 1;
                 if (lbl_1_bss_4[var_r30][arg0].unk20 == 0) {
                     if ((arg0 % 2) == 0) {
-                        M507FXPlayVol(0x67E, (s16)fn_1_668C(arg0));
+                        HuAudFXPlayVol(0x67E, (s16)fn_1_668C(arg0));
                     }
                     else {
-                        M507FXPlayVol(0x67F, (s16)fn_1_668C(arg0));
+                        HuAudFXPlayVol(0x67F, (s16)fn_1_668C(arg0));
                     }
                 }
                 else {
                     if ((arg0 % 2) == 0) {
-                        M507FXPlayVol(0x67C, (s16)fn_1_668C(arg0));
+                        HuAudFXPlayVol(0x67C, (s16)fn_1_668C(arg0));
                     }
                     else {
-                        M507FXPlayVol(0x67D, (s16)fn_1_668C(arg0));
+                        HuAudFXPlayVol(0x67D, (s16)fn_1_668C(arg0));
                     }
                 }
             }
@@ -1501,10 +1454,10 @@ void fn_1_562C(s32 var_r31, s32 var_r26)
             omVibrate(var_r31, ((s32)(33.0 - fabs(lbl_1_bss_E14[var_r31].unkC.z / 100.0f))) / 2, 0xC, 0);
             fn_1_7770(1 << var_r31, &lbl_1_bss_E14[var_r31].unkC);
             if ((var_r31 % 2) == 0) {
-                M507FXPlayVol(0x67A, (s16)fn_1_668C(var_r31));
+                HuAudFXPlayVol(0x67A, (s16)fn_1_668C(var_r31));
             }
             else {
-                M507FXPlayVol(0x67B, (s16)fn_1_668C(var_r31));
+                HuAudFXPlayVol(0x67B, (s16)fn_1_668C(var_r31));
             }
             fn_1_64A4(var_r31, 0x1E, 33.0 - fabs(lbl_1_bss_E14[var_r31].unkC.z / 100.0f), 0.95f, 90.0f);
             break;
@@ -1512,10 +1465,10 @@ void fn_1_562C(s32 var_r31, s32 var_r26)
             omVibrate(var_r31, ((s32)(33.0 - fabs(lbl_1_bss_E14[var_r31].unkC.z / 100.0f))) / 2, 0xC, 0);
             fn_1_7770(1 << var_r31, &lbl_1_bss_E14[var_r31].unkC);
             if ((var_r31 % 2) == 0) {
-                M507FXPlayVol(0x67A, (s16)fn_1_668C(var_r31));
+                HuAudFXPlayVol(0x67A, (s16)fn_1_668C(var_r31));
             }
             else {
-                M507FXPlayVol(0x67B, (s16)fn_1_668C(var_r31));
+                HuAudFXPlayVol(0x67B, (s16)fn_1_668C(var_r31));
             }
             fn_1_64A4(var_r31, 0x1E, 33.0 - fabs(lbl_1_bss_E14[var_r31].unkC.z / 100.0f), 0.95f, 90.0f);
             break;
@@ -1588,9 +1541,9 @@ void fn_1_65AC(void)
     if (var_r30 > 0 && var_r30 < var_r29) {
         for (var_r31 = 0; var_r31 < 14; var_r31++) {
             if (var_r30 == lbl_1_data_234[var_r31].unk0) {
-                M507FXPlayVolPan(0x684, lbl_1_data_234[var_r31].unk6, lbl_1_data_234[var_r31].unk4);
+                HuAudFXPlayVolPan(0x684, lbl_1_data_234[var_r31].unk6, lbl_1_data_234[var_r31].unk4);
                 if (var_r31 == 0) {
-                    lbl_1_data_0 = M507FXPlay(0x685);
+                    lbl_1_data_0 = HuAudFXPlay(0x685);
                 }
             }
         }

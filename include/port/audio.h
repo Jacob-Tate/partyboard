@@ -19,6 +19,9 @@ BOOL partyboard_audio_read_async(DVDFileInfo *fileInfo, void *addr, s32 length, 
 // Frame-locked audio for deterministic runs: renders one game frame of audio. Call once per frame.
 void partyboard_audio_frame(void);
 int partyboard_audio_frame_locked(void);
+// Drops queued stream reads and waits for the one in flight, so stream buffers can be freed. Call
+// without holding the audio lock.
+void partyboard_audio_drop_reads(void);
 
 #ifdef __cplusplus
 }

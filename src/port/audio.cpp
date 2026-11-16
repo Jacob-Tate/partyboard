@@ -47,6 +47,8 @@ std::condition_variable sReadCond;
 std::deque<StreamRead> sReadQueue;
 std::thread sReadThread;
 bool sReadStop = false;
+bool sReadBusy = false; // the read thread is servicing a request (sReadMutex)
+std::condition_variable sReadIdleCond;
 
 // Frame-locked mode (deterministic runs, see autotest.h): the game thread renders exactly one
 // game frame of audio per frame and services stream reads at a fixed point, so everything the
@@ -110,6 +112,7 @@ void stream_read_loop() {
         }
         const StreamRead request = sReadQueue.front();
         sReadQueue.pop_front();
+        sReadBusy = true;
         lock.unlock();
 
         const s32 result = DVDReadPrio(request.fileInfo, request.addr, request.length, request.offset, 2);
@@ -121,6 +124,8 @@ void stream_read_loop() {
         }
 
         lock.lock();
+        sReadBusy = false;
+        sReadIdleCond.notify_all();
     }
 }
 
@@ -240,6 +245,17 @@ BOOL partyboard_audio_read_async(DVDFileInfo *fileInfo, void *addr, s32 length, 
 }
 
 int partyboard_audio_frame_locked(void) { return sFrameLocked ? 1 : 0; }
+
+void partyboard_audio_drop_reads(void) {
+    if (sFrameLocked) {
+        std::lock_guard lock(sAudioMutex);
+        sFrameReadQueue.clear();
+        return;
+    }
+    std::unique_lock lock(sReadMutex);
+    sReadQueue.clear();
+    sReadIdleCond.wait(lock, [] { return !sReadBusy; });
+}
 
 void partyboard_audio_frame(void) {
     if (!sFrameLocked) {
