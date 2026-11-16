@@ -18,6 +18,7 @@ subs = [
     (r'GwPlayerConf\[([^]]*)\]\.type\b', r'GWPlayerCfg[\1].iscom'),
     (r'GwPlayerConf\[([^]]*)\]\.grp\b', r'GWPlayerCfg[\1].group'),
     (r'GwPlayer\[([^]]*)\]\.mgCoinBonus', r'GWPlayer[\1].coin_win'),
+    (r'GwPlayer\[([^]]*)\]\.mgCoin\b', r'GWPlayer[\1].coin_win'),
     (r'_CheckFlag\(FLAG_MG_PRACTICE\)', '_CheckFlag(MP5_PRACTICE_FLAG)'),
     (r'_CheckFlag\(FLAG_INST_DECA\)', '0'),
     # m2c drafts use raw numbers
@@ -60,7 +61,11 @@ if os.path.exists(_tbl):
         if d >= len(_dirs) or n > 0x200:
             return m.group(0)
         used.add(_dirs[d].upper())
+        if _dirs[d].upper() not in _mounted:
+            return '0xFFFFFFFF /* TODO(mp5): DATADIR_MP5_%s not mounted, entry %d */' % (_dirs[d].upper(), n)
         return 'DATA_MAKE_NUM(DATADIR_MP5_%s, %d)' % (_dirs[d].upper(), n)
+    _pbt = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'include', 'datadir_table.h')
+    _mounted = set(re.findall(r'DATADIR\(MP5_(\w+),', open(_pbt).read()))
     s = re.sub(r'\b0x([1-9A-E][0-9A-F]{5})U?\b', _num, s)
     if used:
         print('MP5 data dirs used (need DATADIR_MP5_* entries in datadir_table.h):', sorted(used))

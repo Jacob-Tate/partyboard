@@ -33,8 +33,6 @@ enum {
     M526_ANM_split
 };
 
-// MP5's landing dust: MP4's smoke puff at the feet.
-#define CharModelLandDustCreate(charNo, pos) CharEffectSmokeCreate(HU3D_CAM_ALL, (pos))
 
 #include "math.inc"
 

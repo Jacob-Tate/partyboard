@@ -25,10 +25,20 @@
 #include "game/sprite.h"
 #include "game/wipe.h"
 #include <math.h>
+#include <string.h>
 
 // MP5 code names parameters near/far; windows.h (pulled in on Windows) defines both as macros.
 #undef near
 #undef far
+
+// m2c drafts (tools/mp5/fixups.py): a swap whose temporary m2c lost
+#define M2C_SWAP(a, b)                         \
+    do {                                       \
+        char m2c_swap_[sizeof(a)];             \
+        memcpy(m2c_swap_, &(a), sizeof(a));    \
+        (a) = (b);                             \
+        memcpy(&(b), m2c_swap_, sizeof(b));    \
+    } while (0)
 
 // ---- Names -------------------------------------------------------------------------------------------
 
@@ -125,6 +135,11 @@ typedef s16 GAMEMESID;
 #define CharFXStop(charNo, seId) HuAudMp5CharFXStop((charNo), (seId))
 #define HuAudJinglePlay(streamId) HuAudSStreamPlay(streamId)
 #define HuAudBGMPlay(streamId) HuAudSStreamPlay(streamId)
+
+// MP5's landing dust: MP4's smoke puff at the feet.
+#ifndef CharModelLandDustCreate
+#define CharModelLandDustCreate(charNo, pos) CharEffectSmokeCreate(HU3D_CAM_ALL, (pos))
+#endif
 
 // Voice panning has no MP4 counterpart.
 #define CharModelVoicePanSet(charNo, pan) ((void)(charNo), (void)(pan))

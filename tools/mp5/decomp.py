@@ -81,13 +81,14 @@ def strip_bodies(s):
     return s
 
 
-def build_context(mp5ref, extra):
+def build_context(mp5ref, extras):
     os.makedirs(OUT, exist_ok=True)
     src = os.path.join(OUT, 'ctx_in.c')
     with open(src, 'w') as f:
         f.write(CTX_HEADERS)
-        if extra:
-            f.write('#include "%s"\n' % os.path.abspath(extra).replace('\\', '/'))
+        for extra in extras:
+            if extra:
+                f.write('#include "%s"\n' % os.path.abspath(extra).replace('\\', '/'))
     raw = os.path.join(OUT, 'ctx.raw')
     inc = [os.path.join(mp5ref, d) for d in ('include', 'src', 'include/dolphin')]
     cmd = [find_clang(), '-E', '-P', '-nostdinc', '--target=powerpc-eabi', '-DM2CTX',
@@ -225,6 +226,19 @@ def fix_denormals(code):
     return re.sub(r'\b\d\.\d+e-3[01]\d\b', sub, code)
 
 
+def split_params(s):
+    out, depth, cur = [], 0, ''
+    for c in s:
+        if c == ',' and depth == 0:
+            out.append(cur.strip()); cur = ''
+            continue
+        depth += (c == '(') - (c == ')')
+        cur += c
+    if cur.strip() and cur.strip() != 'void':
+        out.append(cur.strip())
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('rel', help='MP5 REL dir name as in mp5ref/config (e.g. m505Dll, m502dll)')
@@ -233,31 +247,80 @@ def main():
     ap.add_argument('--mp5ref', default=os.path.join(ROOT, '..', 'mp5ref'))
     ap.add_argument('-o', '--out')
     ap.add_argument('--raw', action='store_true', help='skip the structural clean-ups (tools/mp5/fixups.py)')
+    ap.add_argument('--absorb', action='store_true', help='write fields m2c inferred for --types structs back into it')
     a = ap.parse_args()
 
     mp5ref = os.path.abspath(a.mp5ref)
-    ctx = build_context(mp5ref, a.types)
     asm = os.path.join(OUT, a.rel + '.s')
     fix_asm(find_asm(mp5ref, a.rel), asm)
-    argv = ['--target', 'ppc-mwcc-c', '--context', ctx, '--globals', 'used']
-    if a.func:
-        argv += ['-f', a.func]
     from m2c.main import parse_flags, run
     import io, contextlib
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        run(parse_flags(argv + [asm]))
-    code, todo = fifo_pass(buf.getvalue())
+
+    def m2c(extras, func=None):
+        ctx = build_context(mp5ref, extras)
+        argv = ['--target', 'ppc-mwcc-c', '--context', ctx, '--globals', 'used', '--no-cache']
+        if func:
+            argv += ['-f', func]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            run(parse_flags(argv + [asm]))
+        return buf.getvalue()
+
+    # pass 1: each function's own signature (decompiled from its body) is reliable; call sites in other
+    # functions guess wrongly (float args as pointers, missing args). Feed the signatures back as context.
+    first = m2c([a.types])
+    declared = open(a.types).read() if a.types else ''
+    protos = []
+    for m in re.finditer(r'^([A-Za-z_][\w \*]*?)\b(\w+)\((.*)\) \{$', first, re.M):
+        if m.group(2) in ('_prolog', '_epilog'):
+            continue
+        sig = m.group(0)[:-2]
+        # stack-spill "params" m2c invents (arg_sp0, void (**arg_sp0)(...)) aren't real
+        params = [p for p in split_params(m.group(3)) if 'arg_sp' not in p]
+        # pointer params only touched at +0/+4/+8 are Vecs (m2c types them by the first field it sees)
+        body = first[m.end():first.find('\n}', m.end())]
+        for i, p in enumerate(params):
+            pm = re.match(r'(?:f32|s32|u32|void|\?) \*(arg\w+)$', p)
+            if pm:
+                offs = {x for x in re.findall(r'\b%s->unk([0-9A-F]+)\b' % pm.group(1), body)}
+                if offs and offs <= {'0', '4', '8'} and '(bitwise s32) %s->' % pm.group(1) not in body:
+                    params[i] = 'Vec *%s' % pm.group(1)
+        sig = '%s%s(%s)' % (m.group(1), m.group(2), ', '.join(params) or 'void')
+        sig = re.sub(r'\? \*', 'void *', sig)
+        if '?' in sig or '_struct_' in sig or re.search(r'\b%s\(' % m.group(2), declared):
+            continue
+        protos.append(sig.replace('f32 (*mtx)[4]', 'Mtx mtx') + ';')
+    proto_h = os.path.join(OUT, a.rel + '_protos.h')
+    with open(proto_h, 'w') as f:
+        f.write('\n'.join(protos) + '\n')
+    raw = m2c([a.types, proto_h], a.func)
+    code, todo = fifo_pass(raw)
     code = fix_denormals(code)
-    if not a.func and not a.raw:
-        sys.path.insert(0, HERE)
-        import fixups
-        code = fixups.run(code, open(asm).read(), a.types)
     # unparsed jump tables: `idx *= 4; switch (*(&jumptable_X + idx)) {` -> `switch (idx) {`
     # (the case labels m2c prints are already table indices)
     code = re.sub(r'(\w+) \*= 4;\n(\s*)switch \(\*\(&jumptable_\w+ \+ \1\)\) \{ /\* unable to parse jump table \*/',
                   r'\2switch (\1) { /* jump table */', code)
 
+    if not a.func and not a.raw:
+        sys.path.insert(0, HERE)
+        import fixups
+        sym = os.path.join(mp5ref, 'config', 'GP5E01_00', 'rels', a.rel, 'symbols.txt')
+        code = fixups.run(code, open(asm).read(), a.types, open(sym).read() if os.path.exists(sym) else None)
+    # m2c re-prints --types structs it found more fields for (in padding); drop them from the code, and
+    # with --absorb write m2c's version (comments stripped) back into the types header
+    if a.types:
+        th = open(a.types, encoding='utf-8').read()
+        for m in list(re.finditer(r'^typedef struct (\w+) \{\n.*?^\} \1;[^\n]*\n\n?', code, re.M | re.S)):
+            if not re.search(r'\} %s;' % m.group(1), th):
+                continue
+            code = code.replace(m.group(0), '')
+            if a.absorb:
+                new = re.sub(r'/\*.*?\*/ ?', '', m.group(0)).rstrip() + '\n'
+                new = re.sub(r'[ \t]+\n', '\n', new)
+                th = re.sub(r'typedef struct %s \{.*?\} %s;[^\n]*\n' % (m.group(1), m.group(1)), lambda _: new, th, flags=re.S)
+                print('  absorbed m2c fields for', m.group(1))
+        if a.absorb:
+            open(a.types, 'w', encoding='utf-8', newline='\n').write(th)
     errs = re.findall(r'M2C_ERROR\(/\* (.*?) \*/\)', code)
     if a.func:
         print(code)

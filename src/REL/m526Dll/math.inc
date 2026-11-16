@@ -156,7 +156,8 @@ static BOOL MathCircleShapeCheck(MathCircle *circle, MathPolygon *poly)
     }
     max = poly->pointNum-1;
     for(i=0; i<max; i++) {
-        MathBBox bbox;
+        // MP5's code sets max.x twice and never max.y; zero it so the read is deterministic (it was stack garbage)
+        MathBBox bbox = { 0 };
         bbox.min.x = poly->point[i].x;
         bbox.min.y = poly->point[i].y;
         bbox.max.x = poly->point[i+1].x;

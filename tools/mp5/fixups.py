@@ -10,7 +10,7 @@ Hints read from the --types header (plain C comments, one per line):
 """
 import re
 
-GC_SIZE = {'s8': 1, 'u8': 1, 's16': 2, 'u16': 2, 's32': 4, 'u32': 4, 'f32': 4, 'float': 4, 'Vec': 12, 'HuVecF': 12}
+GC_SIZE = {'char': 1, 's8': 1, 'u8': 1, 's16': 2, 'u16': 2, 's32': 4, 'u32': 4, 'f32': 4, 'float': 4, 'Vec': 12, 'HuVecF': 12}
 
 # HU3DPARTICLE / HU3DPARTICLEDATA: identical layouts in MP4 and MP5
 PARTICLE = {'unk0': 'dataCnt', 'unk2': 'emitCnt', 'unk4': 'pos.x', 'unk8': 'pos.y', 'unkC': 'pos.z',
@@ -54,11 +54,14 @@ def unused_functions(asm):
 
 
 def parse_types(path):
-    hints = {'objdata': None, 'objdata_fn': {}, 'arrays2d': {}, 'arrays1d': {}, 'particlework': None, 'layouts': {}}
+    hints = {'objdata': None, 'objdata_fn': {}, 'arrays2d': {}, 'arrays1d': {}, 'particlework': None, 'layouts': {}, 'vars': {}, 'ptrarrays2d': {}}
     if not path:
         return hints
     s = open(path, encoding='utf-8').read()
     hints['layouts'] = struct_layouts(s)
+    hints['statics'] = dict(re.findall(r'^//\s*static (\w+):\s*(.+?)\s*$', s, re.M))
+    for m in re.finditer(r'^//\s*var (\w+) (\w+):\s*(\w+)', s, re.M):
+        hints['vars'].setdefault(m.group(1), {})[m.group(2)] = m.group(3)
     for m in re.finditer(r'^extern (\w+) (\w+)\[(\w+)\];', s, re.M):
         if m.group(1) in GC_SIZE:
             hints['arrays1d'][m.group(2)] = GC_SIZE[m.group(1)]
@@ -71,10 +74,70 @@ def parse_types(path):
     m = re.search(r'^//\s*particlework:\s*(\w+)', s, re.M)
     if m:
         hints['particlework'] = m.group(1)
-    for m in re.finditer(r'^extern (\w+) (\w+)\[(\w+)\]\[(\w+)\];', s, re.M):
-        if m.group(1) in GC_SIZE:
-            hints['arrays2d'][m.group(2)] = (GC_SIZE[m.group(1)], int(m.group(3), 0), int(m.group(4), 0))
+    for m in re.finditer(r'^extern (\w+) ?(\*?) ?(\w+)\[(\w+)\]\[(\w+)\];', s, re.M):
+        if m.group(1) in GC_SIZE or m.group(2):
+            if m.group(2):
+                hints['ptrarrays2d'][m.group(3)] = (int(m.group(4), 0), int(m.group(5), 0))
+            else:
+                hints['arrays2d'][m.group(3)] = (GC_SIZE[m.group(1)], int(m.group(4), 0), int(m.group(5), 0))
+    for m in re.finditer(r'^extern \w+ ?\* ?(\w+)\[(\w+)\];', s, re.M):
+        hints['arrays1d'][m.group(1)] = 4
     return hints
+
+
+FIELD_TYPES = {}
+
+
+def field_path(t, off, layouts):
+    """Field path at byte `off` of struct `t` (GC layout): 'unk8[2].unk0.y', or None."""
+    if t in ('Vec', 'HuVecF', 'Point3d'):
+        return {0: 'x', 4: 'y', 8: 'z'}.get(off)
+    for foff, sz, cnt, name in layouts.get(t, []):
+        if foff <= off < foff + sz * cnt:
+            idx, rem = divmod(off - foff, sz)
+            p = name + ('[%d]' % idx if cnt > 1 else '')
+            ft = FIELD_TYPES.get((t, name), '')
+            if ft.endswith('*'):
+                return p if rem == 0 else None
+            if ft in layouts or ft in ('Vec', 'HuVecF', 'Point3d'):
+                sub = field_path(ft, rem, layouts)
+                return p + '.' + sub if sub else None
+            return p if rem == 0 else None
+    return None
+
+
+def resolve_fields(body, var, t, layouts):
+    """Accesses m2c printed as raw offsets (var was void*) -> real field paths of t."""
+    def sub(m):
+        p = field_path(t, int(m.group(1), 16), layouts)
+        return '%s->%s' % (var, p) if p else m.group(0)
+    return re.sub(r'\b%s->unk([0-9A-F]+)\b(?!\[)' % re.escape(var), sub, body)
+
+
+def element_pointers(body, layouts):
+    """`p = v + ((i * size) + off)` / `p = v + off` into a typed work struct -> `p = &v->field[i]`."""
+    for t, fields in layouts.items():
+        for v in set(re.findall(r'\b%s \*(\w+);' % t, body)):
+            for off, sz, cnt, name in fields:
+                if off:
+                    body = re.sub(r'(?<![\w.>])%s \+ (?:0x%X|%d)(?=[,)])' % (v, off, off),
+                                  '&%s->%s%s' % (v, name, '[0]' if cnt > 1 else ''), body)
+            for off, sz, cnt, name in fields:
+                et = FIELD_TYPES.get((t, name))
+                if not et:
+                    continue
+                pat_i = r'^(    \s*)(\w+) = %s \+ \(\(\(?([^*;]+?)\)? \* (?:0x%X|%d)\) \+ (?:0x%X|%d)\);' % (v, sz, sz, off, off)
+                pat_0 = r'^(    \s*)(\w+) = %s \+ (?:0x%X|%d);' % (v, off, off) if off else None
+                for pat, idx in ((pat_i, True), (pat_0, False)):
+                    if not pat:
+                        continue
+                    for m in list(re.finditer(pat, body, re.M)):
+                        p = m.group(2)
+                        rep = '%s%s = &%s->%s%s;' % (m.group(1), p, v, name, ('[%s]' % m.group(3)) if idx else ('[0]' if cnt > 1 else ''))
+                        body = body.replace(m.group(0), rep)
+                        body = re.sub(r'^(    )(?:void|M2C_UNK|\?|f32|s32) \*%s;$' % p, r'\g<1>%s *%s;' % (et, p), body, flags=re.M)
+                        body = resolve_fields(body, p, et.rstrip(' *'), layouts)
+    return body
 
 
 def struct_layouts(s):
@@ -98,6 +161,7 @@ def struct_layouts(s):
                 al = min(sz, 4) if sz in (1, 2, 4) else 4
                 off = (off + al - 1) // al * al
                 fields.append((off, sz, cnt, dm.group(1)))
+                FIELD_TYPES[(m.group(2), dm.group(1))] = fm.group(1) + (' *' if fm.group(2) or decl.strip().startswith('*') else '')
                 off += sz * cnt
         else:
             sizes[m.group(2)] = (off + 3) // 4 * 4
@@ -115,7 +179,7 @@ def fix_struct_arrays(body, layouts):
                 for k in range(cnt):
                     body = re.sub(r'\b%s->unk%X\b(?!\[)' % (v, off + k * sz), '%s->%s[%d]' % (v, name, k), body)
                 body = re.sub(r'\b%s->%s\b(?!\[)' % (v, name), '%s->%s[0]' % (v, name), body)
-                body = re.sub(r'\*\(%s \+ \(\((\w+) \* %d\) \+ 0x%X\)\)' % (v, sz, off),
+                body = re.sub(r'\*\(%s \+ \(\(\(?([^*;]+?)\)? \* %d\) \+ (?:0x%X|%d)\)\)' % (v, sz, off, off),
                               lambda m: '%s->%s[%s]' % (v, name, m.group(1)), body)
     return body
 
@@ -258,10 +322,269 @@ def deref(x):
     return x[1:] if x.startswith('&') else '*' + x
 
 
-def run(code, asm, types_path):
+def lost_swaps(body):
+    """`a = b; b = a;` is m2c dropping the temporary of a swap (the old value stayed in a register)."""
+    return re.sub(r'^(\s*)([^\n=;]+?) = ([^\n=;]+?);\n\s*\3 = \2;\n',
+                  lambda m: '%sM2C_SWAP(%s, %s); /* m2c lost the temporary */\n' % (m.group(1), m.group(2), m.group(3)),
+                  body, flags=re.M)
+
+
+def hoist_bitwise_calls(body):
+    """f(x, (bitwise f32) g(y)) -> g(y); f(x): m2c passing a previous call's result register along."""
+    def sub(m):
+        return '%s%s;\n%s%s%s' % (m.group(1), m.group(3), m.group(1), m.group(2), m.group(4))
+    return re.sub(r'^(\s*)(.*?), \(bitwise f32\) (\w+\((?:[^()]|\([^()]*\))*\))(\).*)$', sub, body, flags=re.M)
+
+
+def prototypes_from_definitions(code):
+    """m2c's forward declarations (`/* static */`) come from call-site guesses; use the definitions'."""
+    sigs = []
+    for m in re.finditer(r'(?m)^([A-Za-z_][^\n;=]*?\b(\w+)\((.*)\)) \{$', code):
+        if m.group(2) not in ('if', 'while', 'switch', 'for'):
+            sigs.append(m.group(1) + ';')
+    first = re.search(r'(?m)^[^\n]*/\* static \*/\n', code)
+    code = re.sub(r'(?m)^[^\n]*/\* static \*/\n', '', code)
+    pos = first.start() if first else 0
+    return code[:pos] + '\n'.join(sigs) + '\n\n' + code[pos:]
+
+
+def deref_work(body, layouts):
+    """`*v` on a work-struct pointer means its first field; `*HuPrcCurrentGet()->property` an s32."""
+    body = re.sub(r'(?:\(s32\) )?\*HuPrcCurrentGet\(\)->property\b', '*(s32 *)HuPrcCurrentGet()->property', body)
+    for t, fields in layouts.items():
+        if not fields:
+            continue
+        off, sz, cnt, name = fields[0]
+        first = name + ('[0]' if cnt > 1 else '')
+        for v in set(re.findall(r'\b%s \*(\w+);' % t, body)):
+            body = re.sub(r'((?:[=(,!<>] |\())\*%s\b(?!\s*(?:\[|->|\+|=[^=]))' % v, lambda m: '%s%s->%s' % (m.group(1), v, first), body)
+    return body
+
+
+def malloc_sizeof(body, layouts):
+    """Work allocations: sizeof(the struct) instead of the GameCube size (pointers are 8 bytes on PC, and
+    some originals write past their allocation)."""
+    for t, v in re.findall(r'^    (\w+) \*(\w+);$', body, re.M):
+        if t in layouts:
+            body = re.sub(r'\b%s = HuMemDirectMallocNum\((\w+), (?:0x[0-9A-F]+|\d+), ' % v,
+                          lambda m: '%s = HuMemDirectMallocNum(%s, sizeof(%s), ' % (v, m.group(1), t), body)
+    return body
+
+
+def param_types(code):
+    """{function: [param type, ...]} from the definitions in the draft."""
+    out = {}
+    for m in re.finditer(r'(?m)^[A-Za-z_][^\n;=]*?\b(\w+)\(([^\n]*)\) \{$', code):
+        ps = [p.strip() for p in m.group(2).split(',')] if m.group(2).strip() not in ('', 'void') else []
+        out[m.group(1)] = [re.sub(r'\s*\b\w+$', '', p) if not p.endswith(')') else p for p in ps]
+    return out
+
+
+def stack_vecs(body, ptypes):
+    """`F(&sp8)` where F takes a Vec* / Mtx: sp8, spC, sp10 are one Vec (or Mtx), not scalars."""
+    kinds = {}
+    for m in re.finditer(r'\b(\w+)\(([^;\n]*)\)', body):
+        pt = ptypes.get(m.group(1))
+        if not pt:
+            continue
+        for i, arg in enumerate(a.strip() for a in m.group(2).split(',')):
+            am = re.match(r'^(?:\(\w+ \*\) )?&(sp[0-9A-F]+)$', arg)
+            if am and i < len(pt) and pt[i].replace(' ', '') in ('Vec*', 'HuVecF*', 'Point3d*'):
+                kinds[am.group(1)] = 'Vec'
+    for m in re.finditer(r'\(f32 \(\*\)\[4\]\) &(sp[0-9A-F]+)\[0\]', body):
+        kinds[m.group(1)] = 'Mtx'
+    for b, kind in kinds.items():
+        base = int(b[2:], 16)
+        n = 3 if kind == 'Vec' else 12
+        names = {}
+        for k in range(n):
+            nm = 'sp%X' % (base + 4 * k)
+            names[nm] = ('%s.%s' % (b, 'xyz'[k])) if kind == 'Vec' else '%s[%d][%d]' % (b, k // 4, k % 4)
+        for nm in names:
+            body = re.sub(r'^    [\w ]+?\**\s?%s(?:\[[^\]]*\])?;\n' % nm, '', body, flags=re.M)
+        body = re.sub(r'\(f32 \(\*\)\[4\]\) &%s\[0\]' % b, b, body)
+        body = re.sub(r'\((?:\w+ \*)\) &%s\b' % b, '&' + b, body)
+        for nm, rep in names.items():
+            if kind == 'Mtx' and nm == b:
+                continue
+            body = re.sub(r'\(bitwise (?:f32|s32)\) %s\b' % nm, rep, body)
+            body = re.sub(r'(?<![&\w])%s\b(?![\[.])' % nm, rep, body)
+        if kind == 'Mtx':
+            body = re.sub(r'\b%s\[(\d+)\](?!\[)' % b, lambda m: '%s[%d][%d]' % (b, int(m.group(1)) // 4, int(m.group(1)) % 4), body)
+        body = re.sub(r'(\) \{\n)', r'\1    %s %s;\n' % (kind, b), body, count=1)
+    return body
+
+
+def trim_call_args(code, ptypes):
+    """m2c passes leftover registers as extra args to functions defined in this file."""
+    def sub(m):
+        name, args = m.group(1), m.group(2)
+        n = len(ptypes.get(name, []))
+        parts, depth, cur = [], 0, ''
+        for c in args:
+            if c == ',' and depth == 0:
+                parts.append(cur); cur = ''
+                continue
+            depth += (c in '([') - (c in ')]')
+            cur += c
+        parts.append(cur)
+        if name in ptypes and len(parts) > n and args.strip():
+            return '%s(%s)' % (name, ','.join(parts[:n]).strip())
+        return m.group(0)
+    return re.sub(r'(?<![\w.>])(\w+)\(((?:[^();\n]|\((?:[^();\n]|\([^();\n]*\))*\))*)\)(?=;|\)| [!=<>])', sub, code)
+
+
+def scalar_ptr_fields(body):
+    """`p->unk4` on an `f32 *` / `s32 *` p (m2c's view of small float/int structs) is p[1]."""
+    for t, v in re.findall(r'(?:(?<=^    )|(?<=\()|(?<=, ))(f32|s32|u32|s16|u16) \*(\w+)(?=[;,)])', body, re.M):
+        es = GC_SIZE[t]
+        body = re.sub(r'\b%s->unk([0-9A-F]+)\b' % v, lambda m: '%s[%d]' % (v, int(m.group(1), 16) // es), body)
+    return body
+
+
+def inline_sqrt(body):
+    """MWCC inlines sqrtf as __frsqrte + Newton steps + NaN/inf branches; put the call back."""
+    pat = re.compile(r'^(\s*)if \(([\w.\->\[\]]+) > \(bitwise f32\) 0\.0\) \{\n\s*(\w+) = __frsqrte\(\2\);\n'
+                     r'(?:.*\n)*?\s*(\w+) = \(f64\) \2 \* \(0\.5 \* \w+ \* \(3\.0 - .*\n'
+                     r'\s*\} else if \(\(bitwise f32\) 0\.0 == \2\) \{\n\s*\4 = 0\.0;\n'
+                     r'\s*\} else if \(\2 != \(bitwise f32\) 0\.0\) \{\n\s*\4 = .*__float_nan;\n'
+                     r'\s*\} else \{\n\s*\4 = .*__float_huge;\n\s*\}\n', re.M)
+    # float flavour: if (x > 0.0f) { 3 Newton steps } else { r = x; }
+    pat2 = re.compile(r'^(\s*)if \(([\w.\->\[\]]+) > 0\.0f\) \{\n\s*\w+ = __frsqrte\(\2\);\n'
+                      r'(?:[^}\n]*\n)*?\s*\} else \{\n\s*(\w+) = \2;\n\s*\}\n', re.M)
+    return pat2.sub(lambda m: '%s%s = sqrtf(%s);\n' % (m.group(1), m.group(3), m.group(2)),
+                    pat.sub(lambda m: '%s%s = sqrtf(%s);\n' % (m.group(1), m.group(4), m.group(2)), body))
+
+
+def unset_f9(code):
+    """Hu3DCameraPosSet & co. take 9 floats; m2c loses the 9th (f9). After ..., v.x, v.y it is v.z."""
+    def sub(m):
+        base, f = m.group(1), m.group(2)
+        return '%s%s, %s%s' % (m.group(0)[:m.start(3) - m.start(0)], '', base, {'y': '.z', 'unk4': '.unk8'}[f])
+    return re.sub(r'([\w\[\]().>-]+?)\.(y|unk4), (M2C_ERROR\(/\* Read from unset register \$f9 \*/\))',
+                  lambda m: '%s.%s, %s%s' % (m.group(1), m.group(2), m.group(1), {'y': '.z', 'unk4': '.unk8'}[m.group(2)]), code)
+
+
+def var_types(body):
+    """{var: struct type} for `T *var` params and locals of a function."""
+    norm = {'Point3d': 'Vec', 'HuVecF': 'Vec'}
+    return dict((v, norm.get(t, t)) for t, v in re.findall(r'(?:^    |\(|, )(?:struct )?(\w+) \*(\w+)(?=[;,)])', body, re.M))
+
+
+def mixed_struct_copies(body, layouts):
+    """`*a = *b;` with a: T1*, b: T2* (T1 starts with a T2): m2c's view of a copy into the first field."""
+    vt = var_types(body)
+
+    def first_of(t, want, path=''):
+        for foff, sz, cnt, name in layouts.get(t, []):
+            if foff != 0:
+                continue
+            ft = FIELD_TYPES.get((t, name), '')
+            p = path + name + ('[0]' if cnt > 1 else '')
+            if ft == want:
+                return p
+            if ft in layouts:
+                return first_of(ft, want, p + '.')
+        return None
+
+    def sub(m):
+        a, b = m.group(2), m.group(3)
+        ta, tb = vt.get(a), vt.get(b)
+        if ta and tb and ta != tb:
+            p = first_of(ta, tb)
+            if p:
+                return '%s%s->%s = *%s;' % (m.group(1), a, p, b)
+        return m.group(0)
+    return re.sub(r'^(\s*)\*(\w+) = \*(\w+);', sub, body, flags=re.M)
+
+
+def asm_values(asm, name):
+    """Data directive values of `.obj name` in the split asm (name$123 form for local statics)."""
+    m = re.search(r'^\.obj %s, \w+\n(.*?)^\.endobj' % re.escape(name), asm, re.M | re.S)
+    if not m:
+        return None
+    vals = []
+    for d, args in re.findall(r'^\s*\.(4byte|2byte|byte|float|double)\s+(.*)$', m.group(1), re.M):
+        for a in args.split(','):
+            a = a.strip()
+            if d == 'float':
+                a = a if a.endswith('f') else a + 'f'
+            elif re.match(r'^-?(0x[0-9A-Fa-f]+|\d+)$', a):
+                a = '0x%X' % int(a, 0) if int(a, 0) > 9 else str(int(a, 0))
+            vals.append(a)
+    return vals
+
+
+def fill_initializers(code, asm):
+    """m2c leaves `static struct _struct_X_0xN X[K]; /* unable to generate initializer ... */` empty."""
+    def sub(m):
+        decl, name, count = m.group(1), m.group(2), m.group(3)
+        vals = asm_values(asm, re.sub(r'_(\d+)$', r'$\1', name)) or asm_values(asm, name)
+        if not vals:
+            return m.group(0)
+        if count:
+            k = int(count, 0)
+            n = max(1, len(vals) // k)
+            init = ', '.join('{ %s }' % ', '.join(vals[i:i + n]) for i in range(0, n * k, n))
+        else:
+            init = ', '.join(vals)
+        return '%s = { %s };' % (decl, init)
+    return re.sub(r'^((?:static )?struct _struct_\w+ (\w+)(?:\[(\w+)\])?);[^\n]*unable to generate initializer[^\n]*$',
+                  sub, code, flags=re.M)
+
+
+def symbol_info(symbols):
+    """{name: (size, kind)} from dtk symbols.txt (kind: float/4byte/2byte/byte/string/'')."""
+    info = {}
+    for m in re.finditer(r'^(\S+) = \.\w+:0x[0-9A-F]+; // type:object size:(0x[0-9A-F]+)[^\n]*?(?:data:(\w+))?$', symbols or '', re.M):
+        info[re.sub(r'\$(\d+)', r'_\1', m.group(1))] = (int(m.group(2), 16), m.group(3) or '')
+    return info
+
+
+def synth_globals(code, info):
+    """Make what m2c left untyped compile: undefined `struct _struct_X_0xN` and `static ? X;`."""
+    def fields(size, kind):
+        t = 'f32' if kind == 'float' else 's16' if kind == '2byte' else 'u8' if kind in ('byte', 'string') else 's32'
+        es = {'f32': 4, 's32': 4, 's16': 2, 'u8': 1}[t]
+        return ''.join('    %s unk%X;\n' % (t, o) for o in range(0, size - size % es, es))
+    defined = set(re.findall(r'^struct (_struct_\w+) \{', code, re.M))
+    pre = ''
+
+    def floaty(name):
+        # dtk's data kind is a guess for bss; trust how the code uses the fields
+        n = re.escape(name)
+        return bool(re.search(r'\b%s(?:\[[^\]]*\])?\.unk\w+ [-+*/]?= (?:\(f32\)|[^;]*\d\.\d+f)' % n, code)
+                    or re.search(r'\(f32\) %s(?:\[[^\]]*\])?\.unk\w+' % n, code)
+                    or re.search(r'\b%s(?:\[[^\]]*\])?\.unk\w+ [*/] ' % n, code))
+    for full, base, sz in sorted(set(re.findall(r'\bstruct (_struct_(\w+?)_0x([0-9A-F]+))\b', code))):
+        if full in defined:
+            continue
+        kind = info.get(base, (0, ''))[1]
+        if floaty(base):
+            kind = 'float'
+        pre += 'struct %s { // TODO(mp5): synthesized from the symbol size\n%s};\n\n' % (full, fields(int(sz, 16), kind))
+        defined.add(full)
+    def sub(m):
+        size, kind = info.get(m.group(2), (4, ''))
+        if floaty(m.group(2)):
+            kind = 'float'
+        if size == 4:
+            return '%sstatic %s %s;' % (m.group(1), 'f32' if kind == 'float' else 's32', m.group(2))
+        return '%sstatic struct { // TODO(mp5): synthesized from the symbol size\n%s} %s;' % (m.group(1), fields(size, kind), m.group(2))
+    code = re.sub(r'^()static \? (\w+);[^\n]*', sub, code, flags=re.M)
+    # tables of synthesized structs indexed as *(&tbl[i] + (j * 4)): row i, element j
+    for full, base, sz in sorted(set(re.findall(r'\bstruct (_struct_(\w+?)_0x([0-9A-F]+))\b', code))):
+        t = 'f32' if info.get(base, (0, ''))[1] == 'float' else 'u32'
+        code = re.sub(r'\*\(&%s\[([^\[\]]+)\] \+ \(\(?([^()]+?)\)? \* 4\)\)' % re.escape(base),
+                      lambda m: '((%s *)&%s[%s])[%s]' % (t, base, m.group(1), m.group(2)), code)
+    return pre + code
+
+
+def run(code, asm, types_path, symbols=None):
     hints = parse_types(types_path)
     dead = unused_functions(asm)
     chunks = []
+    ptypes = param_types(code)
     for name, text in split_functions(code):
         if name in dead:
             continue
@@ -273,10 +596,21 @@ def run(code, asm, types_path):
                 text = fix_particle_work(text, hints['particlework'])
             text = text.replace('f32 (*mtx)[4]', 'Mtx mtx')
             text = fix_objdata(name, text, hints)
+            for v, t in hints['vars'].get(name, {}).items():
+                text = re.sub(r'^(    )(?:[\w ]+\*|M2C_UNK|\?) ?%s;$' % v, r'\g<1>%s *%s;' % (t, v), text, flags=re.M)
             text = fix_struct_arrays(text, hints['layouts'])
+            text = element_pointers(text, hints['layouts'])
+            text = deref_work(text, hints['layouts'])
+            text = malloc_sizeof(text, hints['layouts'])
+            text = stack_vecs(text, ptypes)
+            text = scalar_ptr_fields(text)
             text = stack_arrays(name, text, hints['objdata_fn'].get(name, hints['objdata']))
             text = jumptable_else(text)
+            text = inline_sqrt(text)
+            text = hoist_bitwise_calls(text)
+            text = lost_swaps(text)
             text = struct_copies(text)
+            text = mixed_struct_copies(text, hints['layouts'])
             text = re.sub(r'\bHuPrcVSleep\([^)]+\)', 'HuPrcVSleep()', text)
             # OMOBJ model/motion are s16 arrays
             text = re.sub(r'->(mdlId|mtnId)->unk([0-9A-F]+)\b', lambda m: '->%s[%d]' % (m.group(1), int(m.group(2), 16) // 2), text)
@@ -293,6 +627,12 @@ def run(code, asm, types_path):
                       lambda m: '%s%s[%d][%s] = ' % (m.group(3), arr, int(m.group(4), 16) // (size * cols), m.group(2)), code)
         code = re.sub(r'(\w+) = &%s\[([^\[\]]+)\];\n(\s*)\1->unk([0-9A-F]+) = ' % n,
                       lambda m: '%s%s[%d][%s] = ' % (m.group(3), arr, int(m.group(4), 16) // (size * cols), m.group(2)), code)
+    for arr, (rows, cols) in hints['ptrarrays2d'].items():
+        n = re.escape(arr)
+        # untyped: *(&a[i] + (j * 4)); typed rows used as pointers: a[i]->unkH = a[i][H/4]
+        code = re.sub(r'\*\(&%s\[([^\[\]]+)\] \+ \(\(?([^()]+?)\)? \* 4\)\)' % n, lambda m: '%s[%s][%s]' % (arr, m.group(1), m.group(2)), code)
+        code = re.sub(r'\b%s\[([^\[\]]+)\]->unk([0-9A-F]+)\b' % n, lambda m: '%s[%s][%d]' % (arr, m.group(1), int(m.group(2), 16) // 4), code)
+        code = re.sub(r'\(\*%s\)\[([^\[\]]+)\]' % n, lambda m: '%s[0][%s]' % (arr, m.group(1)), code)
     for arr, size in hints['arrays1d'].items():
         code = re.sub(r'\b%s->unk([0-9A-F]+)\b' % re.escape(arr), lambda m: '%s[%d]' % (arr, int(m.group(1), 16) // size), code)
     # globals m2c re-declares for the loader / inlined strings
@@ -301,8 +641,24 @@ def run(code, asm, types_path):
         if len(re.findall(r'\b%s\b' % m.group(1), code)) == 1:
             code = code.replace(m.group(0), '')
     code = re.sub(r'^void ObjectSetup\(\);[^\n]*\n', '', code, flags=re.M)
+    # MWCC function-local statics are named name$123
+    code = re.sub(r'(\w)\$(\d+)', r'\1_\2', code)
     # globals only the dropped (unused) functions touched
     for m in list(re.finditer(r'^(?:static )?[\w?][\w ?]*\*? ?(lbl_\w+)(?:\[[^\]]*\])*;[^\n]*\n', code, re.M)):
         if len(re.findall(r'\b%s\b' % m.group(1), code)) == 1:
             code = code.replace(m.group(0), '')
-    return code
+    # m2c passes leftover registers to varargs (OSReport(fmt, (u32) (u64) x, (bitwise f32) x))
+    code = re.sub(r'(OSReport\([^;]*?), \(u32\) \(u64\) \w+, \(bitwise f32\) \w+\)', r'\1)', code)
+    code = re.sub(r'(OSReport\([^;]*?), \(bitwise f32\) \w+\)', r'\1)', code)
+    code = unset_f9(code)
+    code = fill_initializers(code, asm)
+    # partial / odd-sized copies m2c couldn't express: a byte copy is exact
+    code = code.replace('M2C_STRUCT_COPY(', 'memcpy(')
+    code = trim_call_args(code, param_types(code))
+    code = prototypes_from_definitions(code)
+    for name, t in hints.get('statics', {}).items():
+        arr = re.match(r'(.*?)(\[.*\])$', t)
+        decl = ('%s %s%s' % (arr.group(1), name, arr.group(2))) if arr else ('%s %s' % (t, name))
+        code = re.sub(r'^static (?:\?|struct _struct_\w+|struct \{[^}]*\}) ?%s(?:\[[^\]]*\])*;[^\n]*$' % name,
+                      lambda _: 'static %s;' % decl, code, flags=re.M)
+    return synth_globals(code, symbol_info(symbols))
