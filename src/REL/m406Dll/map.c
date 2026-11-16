@@ -1142,9 +1142,11 @@ void fn_1_45BC(HU3DMODEL *arg0, Mtx arg1)
         GXCallDisplayList(var_r31->unk_A4, var_r31->unk_A0);
         for (var_r30 = 1; var_r30 < 29; var_r30++) {
             var_r29 = var_r30 * 35;
-            GXSETARRAY(GX_VA_POS, &var_r31->unk_84[var_r29], 35 * sizeof(Vec), sizeof(Vec), TRUE);
-            GXSETARRAY(GX_VA_NRM, &var_r31->unk_88[var_r29], 35 * sizeof(Vec), sizeof(Vec), TRUE);
-            GXSETARRAY(GX_VA_CLR0, &var_r31->unk_90[var_r29], 35 * sizeof(GXColor), sizeof(GXColor), TRUE);
+            // The strip spans this row and the next (indices 0-69): the PC GXSetArray needs both rows
+            // (GameCube ignores the size; with 35 the lower row was read past it: mariopartyrd #31).
+            GXSETARRAY(GX_VA_POS, &var_r31->unk_84[var_r29], 70 * sizeof(Vec), sizeof(Vec), TRUE);
+            GXSETARRAY(GX_VA_NRM, &var_r31->unk_88[var_r29], 70 * sizeof(Vec), sizeof(Vec), TRUE);
+            GXSETARRAY(GX_VA_CLR0, &var_r31->unk_90[var_r29], 70 * sizeof(GXColor), sizeof(GXColor), TRUE);
             GXCallDisplayList(var_r31->unk_A4, var_r31->unk_A0);
         }
     }
@@ -3209,7 +3211,7 @@ void fn_1_C86C(HU3DMODEL *arg0, Mtx arg1)
         GXSETARRAY(GX_VA_POS, var_r31->unk_40, var_r31->unk_26 * sizeof(Vec) * 4, sizeof(Vec), TRUE);
         GXSetVtxDesc(GX_VA_CLR0, GX_INDEX16);
         GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
-        GXSETARRAY(GX_VA_CLR0, &var_r31->unk_3C->unk_3C, sizeof(GXColor), 0x44, TRUE);
+        GXSETARRAY(GX_VA_CLR0, &var_r31->unk_3C->unk_3C, var_r31->unk_26 * sizeof(*var_r31->unk_3C), sizeof(*var_r31->unk_3C), TRUE);
         if (HmfInverseMtxF3X3(arg1, sp9C) == 0) {
             MTXIdentity(sp9C);
         }
