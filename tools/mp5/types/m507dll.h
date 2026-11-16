@@ -1,6 +1,8 @@
 // m2c context for m507dll (tools/mp5/decomp.py m507dll --types tools/mp5/types/m507dll.h)
 // Inferred from the draft only: layouts, globals and prototypes, so m2c indexes arrays and passes
 // float args correctly. Offsets are the GameCube ones.
+// objdata: M507Player
+// particlework: M507EffParam
 
 typedef struct M507Player { // OMOBJ::data, 0xCC
     s32 unk0; // current motion slot

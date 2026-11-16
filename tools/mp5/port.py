@@ -33,6 +33,10 @@ subs = [
     (r'\bOMOBJ\b', 'omObjData'),
     (r'Hu3DCameraPosGet\(', 'Mp5CameraPosGet('),
     (r'WipeCreate\(([^,]+), WIPE_TYPE_WHITEFADE, ', r'Mp5WipeWhite(\1, '),
+    # m2c drafts: MP5 character motions by data number; DK (no MP5 motions) needs an MP4 motion picked by hand
+    (r'\bCharMotionCreate\(([^,]+), ([^;]+)\);', r'Mp5CharMotionCreateData(\1, \2, 0 /* TODO(mp5): MP4 motion for DK */);'),
+    # decathlon / story scores have no MP4 counterpart
+    (r'\bGwPlayer\[.*?\]\.mgScore = [^;]*;', '/* MP5 decathlon score */'),
     # m2c drafts: MP5 wipe types by number (5 = PREVTYPE, 6 = WHITEFADE); MP4's enum differs
     (r'\bWipeCreate\(([^,]+), 5, ', r'WipeCreate(\1, WIPE_TYPE_NORMAL, '),
     (r'\bWipeCreate\(([^,]+), 6, ', r'Mp5WipeWhite(\1, '),

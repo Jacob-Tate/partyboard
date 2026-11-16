@@ -232,6 +232,7 @@ def main():
     ap.add_argument('--types', help='extra C header with types/externs for this REL')
     ap.add_argument('--mp5ref', default=os.path.join(ROOT, '..', 'mp5ref'))
     ap.add_argument('-o', '--out')
+    ap.add_argument('--raw', action='store_true', help='skip the structural clean-ups (tools/mp5/fixups.py)')
     a = ap.parse_args()
 
     mp5ref = os.path.abspath(a.mp5ref)
@@ -248,6 +249,10 @@ def main():
         run(parse_flags(argv + [asm]))
     code, todo = fifo_pass(buf.getvalue())
     code = fix_denormals(code)
+    if not a.func and not a.raw:
+        sys.path.insert(0, HERE)
+        import fixups
+        code = fixups.run(code, open(asm).read(), a.types)
     # unparsed jump tables: `idx *= 4; switch (*(&jumptable_X + idx)) {` -> `switch (idx) {`
     # (the case labels m2c prints are already table indices)
     code = re.sub(r'(\w+) \*= 4;\n(\s*)switch \(\*\(&jumptable_\w+ \+ \1\)\) \{ /\* unable to parse jump table \*/',

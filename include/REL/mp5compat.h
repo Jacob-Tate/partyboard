@@ -221,6 +221,13 @@ static s16 Mp5CharMotionCreate(s16 charNo, s32 mp5MotNo, BOOL inCharArchive, s32
     return motId;
 }
 
+// The same from an MP5 data number as MP5 code passes it to CharMotionCreate: an entry of <char>mot.bin, or
+// with the Mario archive's directory, of <char>.bin.
+static s16 Mp5CharMotionCreateData(s16 charNo, u32 dataNum, s32 mp4MotNo)
+{
+    return Mp5CharMotionCreate(charNo, dataNum & 0xFFFF, (s32)(dataNum & ~0xFFFF) == DATADIR_MP5_MARIO, mp4MotNo);
+}
+
 // Index of `charNo` (MP4 numbering) in MP5's per-character tables: DK, who isn't in MP5, borrows Wario's row.
 static s16 Mp5CharNo(s16 charNo)
 {
