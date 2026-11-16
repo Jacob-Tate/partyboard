@@ -1,50 +1,9 @@
 // Night Light Fright, ported from the Mario Party 5 decompilation (mariopartyrd/marioparty5,
 // src/REL/m507dll/m507.c). See include/REL/m507Dll.h.
 
-#include "ext_math.h"
-#include "game/audio.h"
-#include "game/chrman.h"
-#include "game/data.h"
-#include "game/esprite.h"
-#include "game/flag.h"
-#include "game/frand.h"
-#include "game/gamework_data.h"
-#include "game/hu3d.h"
-#include "game/memory.h"
-#include "game/minigame_seq.h"
-#include "game/object.h"
-#include "game/pad.h"
-#include "game/process.h"
-#include "game/sprite.h"
-#include "game/wipe.h"
-#include <math.h>
+#include "REL/mp5compat.h"
 
 #include "REL/m507Dll.h"
-
-// ---- Mario Party 5 -> Mario Party 4 engine shims -------------------------------------------------
-
-#define omObjGetDataAs(obj, type) ((type *)(obj)->data)
-#define M507_PRACTICE_FLAG FLAG_ID_MAKE(1, 12)
-
-// MP5 can read a camera's pos/up/target back; MP4 keeps the same fields in Hu3DCamera.
-static void M507CameraPosGet(s32 cameraBit, HuVecF *pos, HuVecF *up, HuVecF *target)
-{
-    s32 i;
-    for (i = 0; i < HU3D_CAM_MAX; i++) {
-        if (cameraBit & (1 << i)) {
-            *pos = Hu3DCamera[i].pos;
-            *up = Hu3DCamera[i].up;
-            *target = Hu3DCamera[i].target;
-            return;
-        }
-    }
-}
-
-static void M507WipeWhite(s16 mode, s16 duration)
-{
-    WipeColorSet(255, 255, 255);
-    WipeCreate(mode, WIPE_TYPE_NORMAL, duration);
-}
 
 // Sound: MP5's sound bank isn't loaded, so its effect ids map to MP4 sounds from Chain Chomp Fever
 // (m438, the same kind of hopping monster), whose group this overlay loads (sndGrpTable).
@@ -93,42 +52,13 @@ static int M507FXPlayVolPan(int seId, s16 vol, s16 pan)
     return seId < 0 ? -1 : HuAudFXPlayVolPan(seId, vol, pan);
 }
 
-// Characters: MP4 order is Mario, Luigi, Peach, Yoshi, Wario, DK, Daisy, Waluigi. MP5 has all but DK,
-// so those seven use MP5's own motions (same skeletons as MP4's models); DK falls back to MP4 motions.
-static const s32 m507Mp5CharDir[8] = { DATADIR_MP5_MARIO, DATADIR_MP5_LUIGI, DATADIR_MP5_PEACH, DATADIR_MP5_YOSHI,
-    DATADIR_MP5_WARIO, -1, DATADIR_MP5_DAISY, DATADIR_MP5_WALUIGI };
-static const s32 m507Mp5MotDir[8] = { DATADIR_MP5_MARIOMOT, DATADIR_MP5_LUIGIMOT, DATADIR_MP5_PEACHMOT,
-    DATADIR_MP5_YOSHIMOT, DATADIR_MP5_WARIOMOT, -1, DATADIR_MP5_DAISYMOT, DATADIR_MP5_WALUIGIMOT };
-
 // Player motions: idle holding the flashlight (c000m1_347, kept in the character archive), shine (353),
-// win (306), lose (360), knocked away (376).
-static s32 M507MotionData(s16 charNo, s32 i)
+// win (306), lose (360), knocked away (376). DK uses MP4's idle, idle, win, lose, lose.
+static s16 M507MotionCreate(s16 charNo, s32 i)
 {
     static const s32 mp5Num[5] = { 45, 42, 6, 49, 63 };
-    static const s32 mp4Num[5] = { 0x00, 0x00, 0x17, 0x72, 0x72 }; // DK: idle, idle, win, lose, lose
-    if (charNo < 0 || charNo >= 8 || m507Mp5MotDir[charNo] < 0) {
-        return DATA_MAKE_NUM(DATADIR_MARIOMOT, mp4Num[i]);
-    }
-    return DATA_MAKE_NUM(i == 0 ? m507Mp5CharDir[charNo] : m507Mp5MotDir[charNo], mp5Num[i]);
-}
-
-// MP5 character motions also animate the eye texture through attribute tracks that name the attribute by
-// its index in MP5's model. MP4's models number their attributes differently (Yoshi's index 1 is not his
-// eyes), so those tracks would scramble other textures; MP4's character code animates the eyes itself.
-// The joints match MP4's (same names and rest positions), so the transform tracks are kept.
-static void M507MotionStripAttrTracks(s16 motId)
-{
-    HSFMOTION *motion;
-    s32 i;
-    if (motId < 0 || Hu3DMotion[motId].hsf == NULL) {
-        return;
-    }
-    motion = Hu3DMotion[motId].hsf->motion;
-    for (i = 0; i < motion->numTracks; i++) {
-        if (motion->track[i].type == HSF_TRACK_ATTRIBUTE) {
-            motion->track[i].type = 0; // ignored by the motion code
-        }
-    }
+    static const s32 mp4Num[5] = { 0x00, 0x00, 0x17, 0x72, 0x72 };
+    return Mp5CharMotionCreate(charNo, mp5Num[i], i == 0, mp4Num[i]);
 }
 
 // Shadow scale per character (MP5's table, re-indexed to MP4 characters).
@@ -137,54 +67,6 @@ static float M507CharScale(s16 charNo)
     static const float scale[8] = { 0.7f, 0.7f, 0.9f, 0.7f, 1.0f, 1.0f, 0.9f, 1.0f };
     return (charNo >= 0 && charNo < 8) ? scale[charNo] : 0.7f;
 }
-
-// MP5's score window (MgScoreWin*): a dark translucent panel behind each player's distance readout.
-static ANIMDATA *m507ScoreWinAnim;
-
-static s16 MgScoreWinCreate(s16 sizeX, s16 sizeY)
-{
-    s16 gid;
-    s16 sprid;
-    if (!m507ScoreWinAnim) {
-        u8 *bmp;
-        s32 i;
-        m507ScoreWinAnim = HuSprAnimMake(8, 4, ANIM_BMP_I8);
-        bmp = m507ScoreWinAnim->bmp->data = HuMemDirectMallocNum(HEAP_SYSTEM, 8 * 4, MEMORY_DEFAULT_NUM);
-        for (i = 0; i < 8 * 4; i++) {
-            bmp[i] = 0xFF;
-        }
-        DCStoreRangeNoSync(bmp, 8 * 4);
-    }
-    gid = HuSprGrpCreate(1);
-    sprid = HuSprCreate(m507ScoreWinAnim, 100, 0);
-    HuSprGrpMemberSet(gid, 0, sprid);
-    HuSprScaleSet(gid, 0, sizeX / 8.0f, sizeY / 4.0f);
-    HuSprColorSet(gid, 0, 64, 64, 64);
-    HuSprTPLvlSet(gid, 0, 0.7f);
-    return gid;
-}
-
-static void MgScoreWinTPLvlSet(s16 gid, float tpLvl)
-{
-    HuSprTPLvlSet(gid, 0, tpLvl);
-}
-
-static void MgScoreWinPosSet(s16 gid, float posX, float posY)
-{
-    HuSprGrpPosSet(gid, posX, posY);
-}
-
-static void MgScoreWinDispSet(s16 gid, BOOL disp)
-{
-    if (disp) {
-        HuSprAttrReset(gid, 0, HUSPR_ATTR_DISPOFF);
-    }
-    else {
-        HuSprAttrSet(gid, 0, HUSPR_ATTR_DISPOFF);
-    }
-}
-
-// --------------------------------------------------------------------------------------------------
 
 #include "math.inc"
 
@@ -554,8 +436,7 @@ void fn_1_790(omObjData *temp_r30)
     Hu3DModelCameraSet(temp_r30->model[0], 1 << temp_r31->unk2C);
     CharModelStepFxSet(temp_r31->unk14, 0);
     for (i = 0; i < 5; i++) {
-        temp_r30->motion[i] = CharMotionCreate(temp_r31->unk14, M507MotionData(temp_r31->unk14, i));
-        M507MotionStripAttrTracks(temp_r30->motion[i]);
+        temp_r30->motion[i] = M507MotionCreate(temp_r31->unk14, i);
         CharMotionSet(temp_r31->unk14, temp_r30->motion[i]);
     }
     Hu3DModelAttrSet(temp_r30->model[0], HU3D_ATTR_DISPOFF);
@@ -831,7 +712,7 @@ void fn_1_1B00(omObjData *temp_r28)
         lbl_1_bss_10A4.unk10[var_r31] = Hu3DModelCameraCreate(lbl_1_bss_108C[var_r31], 1 << var_r31);
         HuPrcVSleep();
         lbl_1_bss_1088 = Hu3DMotionMotionMaxTimeGet(lbl_1_bss_108C[0]);
-        M507CameraPosGet(1 << var_r31, &lbl_1_bss_1044[var_r31], &lbl_1_bss_1014[var_r31], &lbl_1_bss_FE4[var_r31]);
+        Mp5CameraPosGet(1 << var_r31, &lbl_1_bss_1044[var_r31], &lbl_1_bss_1014[var_r31], &lbl_1_bss_FE4[var_r31]);
         HuPrcVSleep();
         Hu3DModelKill(lbl_1_bss_10A4.unk10[var_r31]);
         HuPrcVSleep();
@@ -962,7 +843,7 @@ void fn_1_2E1C(omObjData *temp_r30)
     }
 
     if (omSysExitReq != 0) {
-        M507WipeWhite(WIPE_MODE_OUT, 60);
+        Mp5WipeWhite(WIPE_MODE_OUT, 60);
         HuAudSeqAllFadeOut(0x3E8);
         HuAudSStreamAllFadeOut(0x3E8);
         if (lbl_1_data_0 >= 0 && HuAudFXStatusGet(lbl_1_data_0)) {
@@ -1012,7 +893,7 @@ void fn_1_2E1C(omObjData *temp_r30)
                 temp_r30->work[0]++;
                 lbl_1_bss_110C = 0.0f;
                 for (var_r31 = 0; var_r31 < 4; var_r31++) {
-                    M507CameraPosGet(1 << var_r31, &lbl_1_bss_1044[var_r31], &lbl_1_bss_1014[var_r31], &lbl_1_bss_FE4[var_r31]);
+                    Mp5CameraPosGet(1 << var_r31, &lbl_1_bss_1044[var_r31], &lbl_1_bss_1014[var_r31], &lbl_1_bss_FE4[var_r31]);
                 }
                 for (var_r31 = 0; var_r31 < 4; var_r31++) {
                     Hu3DModelKill(lbl_1_bss_10A4.unk10[var_r31]);
@@ -1153,10 +1034,10 @@ void fn_1_2E1C(omObjData *temp_r30)
                         (void)var_r21; // decathlon scores: MP5 only
                         (void)var_r22;
                     }
-                    M507WipeWhite(WIPE_MODE_OUT, 60);
+                    Mp5WipeWhite(WIPE_MODE_OUT, 60);
                 }
                 else {
-                    M507WipeWhite(WIPE_MODE_OUT, 60);
+                    Mp5WipeWhite(WIPE_MODE_OUT, 60);
                 }
                 temp_r30->func = fn_1_40CC;
             }
@@ -1232,7 +1113,7 @@ s32 fn_1_3C2C(void)
             var_r25 = var_r26;
             var_r28 = var_r25 + 0xA;
             var_r29 = temp_r31->unk0C;
-            if (_CheckFlag(M507_PRACTICE_FLAG) == 0) {
+            if (_CheckFlag(MP5_PRACTICE_FLAG) == 0) {
                 GWPlayer[var_r29].coin_win = var_r28;
             }
         }

@@ -1164,6 +1164,25 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         0, // inst_mess[3]
     },
     {
+        // Defuse or Lose, ported from Mario Party 5 (2 vs 2).
+        DLL_m526dll, // ovl
+        2, // type
+        1, // flag (not in the board's lists)
+        255, // record_idx
+        MAKE_MESSID(0x17, 0x26), // name_mess (placeholder: no MP5 text yet)
+        DATADIR_MP5_M526, // data_dir
+        DATA_MAKE_NUM(DATADIR_INSTPIC, 39), // inst_pic[0] (placeholder)
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_INSTPIC, 39), // mg_pic[0] (placeholder)
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        0, // inst_mess[0]
+        0, // inst_mess[1]
+        0, // inst_mess[2]
+        0, // inst_mess[3]
+    },
+    {
         ((u16)DLL_NONE), // ovl
         0, // type
         0, // flag

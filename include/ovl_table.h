@@ -175,6 +175,8 @@ DLL(w21Dll)
 DLL(ztardll)
 DLL(m507Dll) // Mario Party 5 port; keep after the MP4 overlays so their ids never move
 #define DLL_m507dll DLL_m507Dll
+DLL(m526Dll)
+#define DLL_m526dll DLL_m526Dll
 #define DLL_modeltestdll DLL_modeltestDll
 #define DLL_messdll DLL_messDll
 #define DLL_mpexdll DLL_mpexDll

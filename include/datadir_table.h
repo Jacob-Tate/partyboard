@@ -147,6 +147,7 @@ DATADIR(ZTAR, DATADIR_PREFIX"/ztar.bin")
 // Mario Party 5 archives, served from the user's MP5 image (port/mp5disc.h). Keep these last so the
 // MP4 directory ids above never move.
 DATADIR(MP5_M507, "mp5/data/m507.bin")
+DATADIR(MP5_M526, "mp5/data/m526.bin")
 DATADIR(MP5_MGCONST, "mp5/data/mgconst.bin")
 DATADIR(MP5_MARIO, "mp5/data/mario.bin")
 DATADIR(MP5_LUIGI, "mp5/data/luigi.bin")
