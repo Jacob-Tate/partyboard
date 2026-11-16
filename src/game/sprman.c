@@ -233,6 +233,16 @@ ANIMDATA *HuSprAnimRead(void *data)
         anim->useNum++;
         return anim;
     }
+    if (((u32 *)data)[2] == ANIM_DATA_ALLOCATION_VALID) {
+        /* This file block was read before (its data is converted in place): as on GC, the same anim once more.
+           (mariopartyrd #38: Toad's Midway Madness' item roulette reads one file four times) */
+        ANIMDATA *read;
+        memcpy(&read, (u8 *)data + 12, sizeof(read));
+        if (read->valid == ANIM_DATA_ALLOCATION_VALID) {
+            read->useNum++;
+            return read;
+        }
+    }
     anim = HuMemDirectMalloc(HEAP_DATA, sizeof(ANIMDATA));
     byteswap_animdata(data, anim);
     anim->valid = ANIM_DATA_ALLOCATION_VALID;
@@ -299,6 +309,11 @@ ANIMDATA *HuSprAnimRead(void *data)
 #ifdef TARGET_PC
     /* Note GameCube button pictures (drawn for the player's controller in HuSprDisp; FIZL0/partyboard N150) */
     pb_button_art_anim_read(anim);
+#endif
+#ifdef BYTESWAPPING
+    /* Stamp the file block (its header offsets are no longer read) with the converted anim for a later read. */
+    ((u32 *)data)[2] = ANIM_DATA_ALLOCATION_VALID;
+    memcpy((u8 *)data + 12, &anim, sizeof(anim));
 #endif
     return anim;
 }
@@ -498,6 +513,9 @@ void HuSprAnimKill(ANIMDATA *anim)
         HuMemDirectFree(anim->bank);
         HuMemDirectFree(anim->pat);
         HuMemDirectFree(anim->bmp);
+#endif
+#ifdef BYTESWAPPING
+        anim->valid = 0; /* a file block stamped with this anim no longer leads here */
 #endif
         HuMemDirectFree(anim);
     }

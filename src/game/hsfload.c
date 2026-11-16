@@ -20,7 +20,12 @@
 #define AS_S16(field) (*((s16 *)&(field)))
 #define AS_U16(field) (*((u16 *)&(field)))
 
+#ifdef TARGET_PC
+/* One entry per material: m440 has a model with 206, and entries past 100 overwrote `head` (mariopartyrd #37). */
+GXColor rgba[1024];
+#else
 GXColor rgba[100];
+#endif
 HSFHEADER head;
 HSFDATA Model;
 
@@ -891,10 +896,15 @@ static void MaterialLoad(void)
             new_mat->attrNum = curr_mat->attrNum;
             // the pointers are being treated as values
             new_mat->attr = (intptr_t *)(NSymIndex+((uintptr_t)curr_mat->attr));
-            rgba[i].r = new_mat->litColor[0];
-            rgba[i].g = new_mat->litColor[1];
-            rgba[i].b = new_mat->litColor[2];
-            rgba[i].a = 255;
+#ifdef TARGET_PC
+            if (i < (s32)(sizeof(rgba) / sizeof(rgba[0])))
+#endif
+            {
+                rgba[i].r = new_mat->litColor[0];
+                rgba[i].g = new_mat->litColor[1];
+                rgba[i].b = new_mat->litColor[2];
+                rgba[i].a = 255;
+            }
             for(j=0; j<new_mat->attrNum; j++) {
                 new_mat->attr[j] = new_mat->attr[j];
             }
