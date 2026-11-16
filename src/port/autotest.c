@@ -4,6 +4,7 @@
 #include "game/board/main.h"
 #include "game/chrman.h"
 #include "game/gamework_data.h"
+#include "game/hu3d.h"
 #include "game/object.h"
 #include "game/objsub.h"
 #include "game/saveload.h"
@@ -42,6 +43,7 @@ static PartyBoardAutotest sAutotest = {
 };
 
 static FILE *sChecksumLog = NULL;
+static int sChecksumModels = 0; // --checksum-models: also hash live 3D model transforms (port validation)
 static OMOVL sLastOvl = -1;
 
 extern u32 GlobalCounter;
@@ -129,6 +131,8 @@ int partyboard_autotest_parse(int argc, char *argv[])
         } else if (strcmp(arg, "--dump-frame") == 0 && next) {
             sAutotest.dumpFrame = (unsigned int)strtoul(next, NULL, 0);
             i++;
+        } else if (strcmp(arg, "--checksum-models") == 0) {
+            sChecksumModels = 1;
         } else if (strcmp(arg, "--checksum-log") == 0 && next) {
             sAutotest.checksumLogPath = next;
             i++;
@@ -487,8 +491,23 @@ void partyboard_autotest_frame_end(void)
             fprintf(sChecksumLog, "# overlay %d at frame %u\n", (int)omcurovl, GlobalCounter);
             sLastOvl = omcurovl;
         }
-        fprintf(sChecksumLog, "%u %d %08x %08x %08x %08x %08x %08x\n", GlobalCounter, (int)omcurovl,
+        fprintf(sChecksumLog, "%u %d %08x %08x %08x %08x %08x %08x", GlobalCounter, (int)omcurovl,
             frand_seed_get(), (u32)rnd_seed, boardRandSeed, sys, players, cfg);
+        if (sChecksumModels) {
+            u32 models = 2166136261u;
+            int i;
+            for (i = 0; i < HU3D_MODEL_MAX; i++) {
+                if (Hu3DData[i].hsf == NULL) {
+                    continue;
+                }
+                models = hash_bytes(models, &i, sizeof(i));
+                models = hash_bytes(models, &Hu3DData[i].attr, sizeof(Hu3DData[i].attr));
+                models = hash_bytes(models, &Hu3DData[i].pos, sizeof(HuVecF) * 3);
+                models = hash_bytes(models, &Hu3DData[i].motWork, sizeof(Hu3DData[i].motWork));
+            }
+            fprintf(sChecksumLog, " %08x", models);
+        }
+        fputc('\n', sChecksumLog);
         if (GlobalCounter % 60 == 0) {
             fflush(sChecksumLog); // about once a second, so the log can be watched live
         }

@@ -210,6 +210,21 @@ def fifo_pass(code):
     return '\n'.join(out), todo
 
 
+def fix_denormals(code):
+    """m2c bug: an lfs'd constant kept in a register and then used in double math is printed as
+    the float's bits read as a double (10.0f -> 5.398241246e-315). Re-read those bits as f32."""
+    import struct
+
+    def sub(m):
+        bits = round(float(m.group(0)) / 5e-324)
+        if not 0 < bits < 1 << 32:
+            return m.group(0)
+        f = struct.unpack('>f', bits.to_bytes(4, 'big'))[0]
+        return '%sf' % repr(f)
+
+    return re.sub(r'\b\d\.\d+e-3[01]\d\b', sub, code)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('rel', help='MP5 REL dir name as in mp5ref/config (e.g. m505Dll, m502dll)')
@@ -232,6 +247,11 @@ def main():
     with contextlib.redirect_stdout(buf):
         run(parse_flags(argv + [asm]))
     code, todo = fifo_pass(buf.getvalue())
+    code = fix_denormals(code)
+    # unparsed jump tables: `idx *= 4; switch (*(&jumptable_X + idx)) {` -> `switch (idx) {`
+    # (the case labels m2c prints are already table indices)
+    code = re.sub(r'(\w+) \*= 4;\n(\s*)switch \(\*\(&jumptable_\w+ \+ \1\)\) \{ /\* unable to parse jump table \*/',
+                  r'\2switch (\1) { /* jump table */', code)
 
     errs = re.findall(r'M2C_ERROR\(/\* (.*?) \*/\)', code)
     if a.func:
