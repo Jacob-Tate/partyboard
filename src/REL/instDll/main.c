@@ -24,6 +24,18 @@
 
 static s16 instMode = 1;
 
+// Duels: 1-vs-1 minigames ported from Mario Party 5 (MP4 has no duel type; they use its 1-vs-1 type 6, whose
+// own story games skip this screen). Shown with the two duelists, group 0 against group 1.
+static u16 instMgNo;
+static BOOL InstIsDuel(void)
+{
+#ifdef TARGET_PC
+    return mgInfoTbl[instMgNo].type == 6 && mgInfoTbl[instMgNo].ovl >= DLL_m507dll;
+#else
+    return FALSE;
+#endif
+}
+
 static omObjData *lbl_1_bss_60;
 static omObjData *outViewObj;
 Process *objman;
@@ -105,7 +117,8 @@ void ObjectSetup(void)
             GWPlayerCfg[team_players[1][1]].group = 2;
         }
     }
-    if (mgInfoTbl[instMgNo].type == 3 || mgInfoTbl[instMgNo].type == 5 || mgInfoTbl[instMgNo].type == 6
+    if (mgInfoTbl[instMgNo].type == 3 || mgInfoTbl[instMgNo].type == 5
+        || (mgInfoTbl[instMgNo].type == 6 && !InstIsDuel())
         || mgInfoTbl[instMgNo].type == 8 || !_CheckFlag(FLAG_ID_MAKE(0, 11))) {
         HuDataDirClose(DATADIR_INST);
         omSysPauseEnable(1);
@@ -432,8 +445,11 @@ static void InstPlayerMain(void)
     else {
         grpType = 0;
     }
+    if (InstIsDuel()) {
+        playerNum = 2;
+    }
     for (i = 0; i < playerNum; i++) {
-        group = instGrpTbl[(grpType * 4) + i];
+        group = InstIsDuel() ? i : instGrpTbl[(grpType * 4) + i];
         for (j = 0; j < 4; j++) {
             if (group == GWPlayerCfg[j].group) {
                 for (order = 0; order < i; order++) {

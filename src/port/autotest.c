@@ -3,6 +3,7 @@
 
 #include "game/board/main.h"
 #include "game/chrman.h"
+#include "game/flag.h"
 #include "game/gamework_data.h"
 #include "game/hu3d.h"
 #include "game/object.h"
@@ -44,6 +45,7 @@ static PartyBoardAutotest sAutotest = {
 
 static FILE *sChecksumLog = NULL;
 static int sChecksumModels = 0; // --checksum-models: also hash live 3D model transforms (port validation)
+static int sInstructions = 0; // --instructions: --minigame shows its instruction screen (COMs only: ~1 s)
 static OMOVL sLastOvl = -1;
 
 extern u32 GlobalCounter;
@@ -133,6 +135,8 @@ int partyboard_autotest_parse(int argc, char *argv[])
             i++;
         } else if (strcmp(arg, "--checksum-models") == 0) {
             sChecksumModels = 1;
+        } else if (strcmp(arg, "--instructions") == 0) {
+            sInstructions = 1;
         } else if (strcmp(arg, "--checksum-log") == 0 && next) {
             sAutotest.checksumLogPath = next;
             i++;
@@ -444,6 +448,11 @@ int partyboard_autotest_setup_minigame(void)
         CharMotionInit(GWPlayerCfg[i].character);
     }
     GWSystem.mg_next = (u16)index;
+    if (sInstructions) {
+        // the board's "explanations" option (board/main.c), which instDll checks
+        GWMGExplainSet(1);
+        _SetFlag(FLAG_ID_MAKE(0, 11));
+    }
     GWMGTypeSet(-1);
     GWMGShowComSet(1);
     SLSaveFlagSet(0);
