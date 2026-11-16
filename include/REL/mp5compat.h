@@ -303,10 +303,28 @@ static const s16 mp5ToMp4MotTbl[146] = {
 // The same from an MP5 data number as MP5 code passes it to CharMotionCreate: an entry of <char>mot.bin, or
 // with the Mario archive's directory, of <char>.bin. DK gets the matching MP4 motion when there is one, else
 // `mp4MotNo`.
+// MP5 motions with no identical MP4 animation, and DK's MP4 motion that looks closest (picked from frame captures
+// of DK in every MP4 motion). `inCharArchive`: an entry of <char>.bin rather than <char>mot.bin.
+static const struct {
+    u16 inCharArchive, mp5MotNo;
+    s16 mp4MotNo;
+} mp5DkMotTbl[] = {
+    { TRUE, 191, 132 }, // raise the held item overhead (m570 shows its card): stands, one arm raised
+    { TRUE, 202, 72 }, // intro pose (m570): fist raised
+    { FALSE, 15, 20 }, // knocked back (m570 losing a round): staggers back
+    { FALSE, 81, 24 }, // dejected after being knocked out (m570): MP4's lose
+};
+
 static s16 Mp5CharMotionCreateData(s16 charNo, u32 dataNum, s32 mp4MotNo)
 {
     BOOL inCharArchive = (s32)(dataNum & ~0xFFFF) == DATADIR_MP5_MARIO;
     u32 no = dataNum & 0xFFFF;
+    s32 i;
+    for (i = 0; i < (s32)(sizeof(mp5DkMotTbl) / sizeof(mp5DkMotTbl[0])); i++) {
+        if (mp5DkMotTbl[i].inCharArchive == inCharArchive && mp5DkMotTbl[i].mp5MotNo == no) {
+            return Mp5CharMotionCreate(charNo, no, inCharArchive, mp5DkMotTbl[i].mp4MotNo);
+        }
+    }
     if (!inCharArchive && no < sizeof(mp5ToMp4MotTbl) / sizeof(mp5ToMp4MotTbl[0]) && mp5ToMp4MotTbl[no] >= 0) {
         mp4MotNo = mp5ToMp4MotTbl[no];
     }
