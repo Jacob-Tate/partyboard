@@ -431,6 +431,22 @@ def deref(x):
     return x[1:] if x.startswith('&') else '*' + x
 
 
+def pow2_mod(body):
+    """MWCC's signed `x % 2^n`: S = x >> 31; R = (x << (32-n)) - S; ((R << n) | (R >> (32-n))) + S -> (x % 2^n)."""
+    signs = {}
+    for m in re.finditer(r'^\s*(\w+) = (?:\(u32\) )?([^\n;]+?) >> 0x1FU;\n', body, re.M):
+        signs[m.group(1)] = m.group(2)
+    for s, x in signs.items():
+        for m in list(re.finditer(r'^(\s*)(\w+) = \(%s << (0x[0-9A-F]+)\) - %s;\n' % (re.escape(x), s), body, re.M)):
+            r, k = m.group(2), int(m.group(3), 16)
+            n = 32 - k
+            pat = r'\(\(%s << %d\) \| \(%s >> 0x%XU\)\) \+ %s' % (r, n, r, k, s)
+            body, cnt = re.subn(pat, '(%s %% %d)' % (x, 1 << n), body)
+            if cnt and not re.search(r'\b%s\b' % r, body.replace(m.group(0), '')):
+                body = body.replace(m.group(0), '')
+    return body
+
+
 def lost_swaps(body):
     """`a = b; b = a;` is m2c dropping the temporary of a swap (the old value stayed in a register)."""
     return re.sub(r'^(\s*)([^\n=;]+?) = ([^\n=;]+?);\n\s*\3 = \2;\n',
@@ -749,6 +765,7 @@ def run(code, asm, types_path, symbols=None):
             text = inline_sqrt(text)
             text = hoist_bitwise_calls(text)
             text = lost_swaps(text)
+            text = pow2_mod(text)
             text = struct_copies(text)
             text = mixed_struct_copies(text, hints['layouts'])
             text = re.sub(r'\bHuPrcVSleep\([^)]+\)', 'HuPrcVSleep()', text)

@@ -779,7 +779,7 @@ s32 fn_1_3B58(s32 arg0) {
             temp_r3 = rand8();
             temp_r3_2 = temp_r3 >> 0x1FU;
             temp_r0 = (temp_r3 << 0x1D) - temp_r3_2;
-            var_r31 = ((temp_r0 << 3) | (temp_r0 >> 0x1DU)) + temp_r3_2 + 0x19;
+            var_r31 = (temp_r3 % 8) + 0x19;
         } else {
             var_r31 = (rand8() % 5) + 0x14;
         }
@@ -788,12 +788,12 @@ s32 fn_1_3B58(s32 arg0) {
             temp_r3_3 = rand8();
             temp_r3_4 = temp_r3_3 >> 0x1FU;
             temp_r0_2 = (temp_r3_3 << 0x1D) - temp_r3_4;
-            var_r31 = ((temp_r0_2 << 3) | (temp_r0_2 >> 0x1DU)) + temp_r3_4 + 6;
+            var_r31 = (temp_r3_3 % 8) + 6;
         } else {
             temp_r3_5 = rand8();
             temp_r3_6 = temp_r3_5 >> 0x1FU;
             temp_r0_3 = (temp_r3_5 << 0x1E) - temp_r3_6;
-            var_r31 = ((temp_r0_3 << 2) | (temp_r0_3 >> 0x1EU)) + temp_r3_6 + 6;
+            var_r31 = (temp_r3_5 % 4) + 6;
         }
     } else if ((s16) lbl_1_bss_6C[arg0].unk0 == 2) {
         if ((s32) lbl_1_bss_B1C.unk120 >= 0x14) {
@@ -806,7 +806,7 @@ s32 fn_1_3B58(s32 arg0) {
             temp_r3_7 = rand8();
             temp_r3_8 = temp_r3_7 >> 0x1FU;
             temp_r0_4 = (temp_r3_7 << 0x1E) - temp_r3_8;
-            var_r31 = ((temp_r0_4 << 2) | (temp_r0_4 >> 0x1EU)) + temp_r3_8 + 4;
+            var_r31 = (temp_r3_7 % 4) + 4;
         } else {
             var_r31 = (rand8() % 3) + 3;
         }
@@ -845,7 +845,7 @@ void fn_1_3D6C(s32 arg0) {
                 temp_r3 = rand8();
                 temp_r3_2 = temp_r3 >> 0x1FU;
                 temp_r0 = (temp_r3 << 0x1D) - temp_r3_2;
-                var_r30 = ((temp_r0 << 3) | (temp_r0 >> 0x1DU)) + temp_r3_2 + 0x19;
+                var_r30 = (temp_r3 % 8) + 0x19;
             } else {
                 var_r30 = (rand8() % 5) + 0x14;
             }
@@ -854,12 +854,12 @@ void fn_1_3D6C(s32 arg0) {
                 temp_r3_3 = rand8();
                 temp_r3_4 = temp_r3_3 >> 0x1FU;
                 temp_r0_2 = (temp_r3_3 << 0x1D) - temp_r3_4;
-                var_r30 = ((temp_r0_2 << 3) | (temp_r0_2 >> 0x1DU)) + temp_r3_4 + 6;
+                var_r30 = (temp_r3_3 % 8) + 6;
             } else {
                 temp_r3_5 = rand8();
                 temp_r3_6 = temp_r3_5 >> 0x1FU;
                 temp_r0_3 = (temp_r3_5 << 0x1E) - temp_r3_6;
-                var_r30 = ((temp_r0_3 << 2) | (temp_r0_3 >> 0x1EU)) + temp_r3_6 + 6;
+                var_r30 = (temp_r3_5 % 4) + 6;
             }
         } else if ((s16) lbl_1_bss_6C[arg0].unk0 == 2) {
             if ((s32) lbl_1_bss_B1C.unk120 >= 0x14) {
@@ -872,7 +872,7 @@ void fn_1_3D6C(s32 arg0) {
                 temp_r3_7 = rand8();
                 temp_r3_8 = temp_r3_7 >> 0x1FU;
                 temp_r0_4 = (temp_r3_7 << 0x1E) - temp_r3_8;
-                var_r30 = ((temp_r0_4 << 2) | (temp_r0_4 >> 0x1EU)) + temp_r3_8 + 4;
+                var_r30 = (temp_r3_7 % 4) + 4;
             } else {
                 var_r30 = (rand8() % 3) + 3;
             }
@@ -957,7 +957,7 @@ void fn_1_4050(s32 arg0) {
         temp_r3 = lbl_1_bss_B1C.unk110[arg0];
         temp_r3_2 = (u32) temp_r3 >> 0x1FU;
         temp_r0 = (temp_r3 << 0x1E) - temp_r3_2;
-        if ((s32) (((temp_r0 << 2) | (temp_r0 >> 0x1EU)) + temp_r3_2) != 0) {
+        if ((s32) ((temp_r3 % 4)) != 0) {
             Hu3DModelAttrReset(temp_r28->unk0, 1U);
         } else {
             Hu3DModelAttrSet(temp_r28->unk0, 1U);
@@ -1231,7 +1231,7 @@ loop_35:
                 temp_r3_2 = rand8();
                 temp_r3_3 = temp_r3_2 >> 0x1FU;
                 temp_r0 = (temp_r3_2 << 0x1D) - temp_r3_3;
-                var_r29 = temp_r26_3 + (((temp_r0 << 3) | (temp_r0 >> 0x1DU)) + temp_r3_3) + 0x1E;
+                var_r29 = temp_r26_3 + ((temp_r3_2 % 8)) + 0x1E;
             } else if ((s32) lbl_1_bss_B1C.unk120 <= 0x1E) {
                 temp_r26_4 = (rand8() % 5) * 5;
                 var_r29 = temp_r26_4 + (rand8() % 7) + 0x19;
@@ -1273,7 +1273,7 @@ loop_35:
                     temp_r3_4 = rand8();
                     temp_r3_5 = temp_r3_4 >> 0x1FU;
                     temp_r0_2 = (temp_r3_4 << 0x1D) - temp_r3_5;
-                    var_r28 = temp_r26_8 + (((temp_r0_2 << 3) | (temp_r0_2 >> 0x1DU)) + temp_r3_5) + 0x1E;
+                    var_r28 = temp_r26_8 + ((temp_r3_4 % 8)) + 0x1E;
                 } else if ((s32) lbl_1_bss_B1C.unk120 <= 0x1E) {
                     temp_r26_9 = (rand8() % 5) * 5;
                     var_r28 = temp_r26_9 + (rand8() % 7) + 0x19;

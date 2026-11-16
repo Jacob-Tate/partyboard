@@ -79,6 +79,9 @@ if os.path.exists(_tbl):
         d, n = v >> 16, v & 0xFFFF
         if d >= len(_dirs) or n > 0x200:
             return m.group(0)
+        line = m.string[m.string.rfind(chr(10), 0, m.start()) + 1:m.start()]
+        if re.search(r'Attr(?:Set|Reset)\(', line):  # model attribute bits (0x400000 ...), not a data number
+            return m.group(0)
         used.add(_dirs[d].upper())
         if _dirs[d].upper() not in _mounted:
             return '0xFFFFFFFF /* TODO(mp5): DATADIR_MP5_%s not mounted, entry %d */' % (_dirs[d].upper(), n)

@@ -368,6 +368,19 @@ static void CharMotionStartEndSet(s16 charNo, float start, float end)
     Hu3DMotionStartEndSet(CharModelIdGet(charNo), start, end);
 }
 
+// MP5 CharMotionUpdateSet only toggles the footstep/voice sync of a motion (MP4 plays no such sync).
+static void CharMotionUpdateSet(s16 charNo, u32 dataNum, BOOL updateF)
+{
+    (void)charNo, (void)dataNum, (void)updateF;
+}
+
+// MP5 CharModelCryCreate spawns a tear particle effect (EFFECT_CRY) at the character's head; MP4 has no
+// such effect, so the tears are left out.
+static void CharModelCryCreate(s16 charNo, float yOfs, float ofsY)
+{
+    (void)charNo, (void)yOfs, (void)ofsY;
+}
+
 static s16 Mp5CharNo(s16 charNo);
 
 // MP5's charHeightTbl, by MP4 character (DK uses Wario's row like the other tables).
