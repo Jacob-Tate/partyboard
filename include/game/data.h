@@ -27,7 +27,7 @@ struct HuDataStat_s {
     u32 decodeType;
     BOOL used;
     s32 num;
-    u32 status;
+    volatile u32 status; /* set by a DVD callback, polled by HuDataGetAsyncStat (mariopartyrd #40) */
     DVDFileInfo dvdFile;
 };
 

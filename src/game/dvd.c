@@ -15,7 +15,7 @@ static DVDDiskID correctDiskID = {
 };
 
 
-static int CallBackStatus;
+static volatile int CallBackStatus; /* set by a DVD callback, polled in loops (mariopartyrd #40) */
 static s32 beforeDvdStatus;
 
 static void HuDVDReadAsyncCallBack(s32 result, DVDFileInfo* fileInfo)
