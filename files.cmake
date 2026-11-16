@@ -379,6 +379,7 @@ set(REL_FILES
         src/REL/m463Dll/main.c
         src/REL/m507Dll/effect.c
         src/REL/m507Dll/main.c
+        src/REL/m524Dll/main.c
         src/REL/m526Dll/main.c
 
         src/REL/mentDll/common.c

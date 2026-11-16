@@ -243,11 +243,127 @@ static s16 Mp5CharMotionCreateData(s16 charNo, u32 dataNum, s32 mp4MotNo)
     return Mp5CharMotionCreate(charNo, dataNum & 0xFFFF, (s32)(dataNum & ~0xFFFF) == DATADIR_MP5_MARIO, mp4MotNo);
 }
 
+// MP5's CharModelMotListCreate: the model plus every motion of a 0-terminated list of MP5 data numbers.
+// DK (no MP5 motions) gets MP4 motion 0 for all of them.
+static s16 CharModelMotListCreate(s16 charNo, s16 model, u32 *motDataNum, s16 *motId)
+{
+    s16 modelId = CharModelCreate(charNo, model);
+    s16 no;
+    for (no = 0; motDataNum[no] != 0; no++) {
+        motId[no] = Mp5CharMotionCreateData(charNo, motDataNum[no], 0);
+    }
+    CharMotionDataClose(charNo);
+    return modelId;
+}
+
+// MP5 charman calls MP4 doesn't have: thin wrappers on the character's model.
+static void CharModelAttrSet(s16 charNo, u32 attr)
+{
+    Hu3DModelAttrSet(CharModelIdGet(charNo), attr);
+}
+
+static void CharModelAttrReset(s16 charNo, u32 attr)
+{
+    Hu3DModelAttrReset(CharModelIdGet(charNo), attr);
+}
+
+static void CharMotionStartEndSet(s16 charNo, float start, float end)
+{
+    Hu3DMotionStartEndSet(CharModelIdGet(charNo), start, end);
+}
+
+static s16 Mp5CharNo(s16 charNo);
+
+// MP5's charHeightTbl, by MP4 character (DK uses Wario's row like the other tables).
+static float CharModelHeightGet(s16 charNo)
+{
+    static const float height[7] = { 150, 170, 188, 169, 164, 180, 210 };
+    return height[Mp5CharNo(charNo)];
+}
+
 // Index of `charNo` (MP4 numbering) in MP5's per-character tables: DK, who isn't in MP5, borrows Wario's row.
 static s16 Mp5CharNo(s16 charNo)
 {
     static const s16 tbl[8] = { 0, 1, 2, 3, 4, 4, 5, 6 };
     return (charNo >= 0 && charNo < 8) ? tbl[charNo] : 0;
+}
+
+// ---- Minigame timer (MgTimer*): MP5's frame counter, shown with MP4's MGSeq countdown ----------------
+
+#define MGTIMER_TYPE_NORMAL 0
+#define MGTIMER_MODE_OFF 0
+#define MGTIMER_MODE_ON 1
+
+typedef struct Mp5MgTimer {
+    s32 mode;
+    s32 maxTime, endTime, speed, time; // frames
+    BOOL stopF; // MP5 code sets it to freeze the timer
+    s16 seqId;
+    HUPROCESS *proc;
+} MGTIMER;
+
+static void Mp5MgTimerMain(void)
+{
+    MGTIMER *timer = (MGTIMER *)HuPrcCurrentGet()->property;
+    while (TRUE) {
+        if (timer->mode == MGTIMER_MODE_ON && !timer->stopF && timer->time != timer->endTime) {
+            timer->time += timer->speed;
+            if (timer->seqId >= 0) {
+                MGSeqParamSet(timer->seqId, 1, (timer->time + 59) / 60);
+            }
+            if (timer->time == timer->endTime) {
+                timer->mode = MGTIMER_MODE_OFF;
+                if (timer->seqId >= 0) {
+                    MGSeqParamSet(timer->seqId, 2, -1);
+                    timer->seqId = -1;
+                }
+            }
+        }
+        if (timer->stopF && timer->seqId >= 0) {
+            // stopped early (MP5 then fades the display out)
+            MGSeqParamSet(timer->seqId, 2, -1);
+            timer->seqId = -1;
+        }
+        HuPrcVSleep();
+    }
+}
+
+static MGTIMER *MgTimerCreate(s32 type)
+{
+    MGTIMER *timer = (MGTIMER *)HuMemDirectMallocNum(HEAP_SYSTEM, sizeof(MGTIMER), MEMORY_DEFAULT_NUM);
+    (void)type;
+    memset(timer, 0, sizeof(*timer));
+    timer->seqId = -1;
+    timer->proc = HuPrcChildCreate(Mp5MgTimerMain, 100, 0x1000, 0, HuPrcCurrentGet());
+    timer->proc->property = timer;
+    return timer;
+}
+
+static void MgTimerParamSet(MGTIMER *timer, s32 maxTime, s32 endTime, s32 recordTime)
+{
+    (void)recordTime;
+    timer->maxTime = timer->time = maxTime;
+    timer->endTime = endTime;
+    timer->speed = (maxTime == endTime) ? 0 : ((maxTime > endTime) ? -1 : 1);
+}
+
+static void MgTimerModeOnSet(MGTIMER *timer, s32 offType)
+{
+    (void)offType;
+    timer->mode = MGTIMER_MODE_ON;
+    if (timer->seqId < 0) {
+        timer->seqId = MGSeqCreate(1, (timer->time + 59) / 60, -1, -1);
+    }
+}
+
+static BOOL MgTimerDoneCheck(MGTIMER *timer)
+{
+    return timer->endTime == timer->time;
+}
+
+static s32 MgTimerValueGet(MGTIMER *timer)
+{
+    return timer->time;
 }
 
 // ---- Score window (MgScoreWin*): a dark translucent panel ---------------------------------------------

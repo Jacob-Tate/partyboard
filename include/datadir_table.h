@@ -148,6 +148,8 @@ DATADIR(ZTAR, DATADIR_PREFIX"/ztar.bin")
 // MP4 directory ids above never move.
 DATADIR(MP5_M507, "mp5/data/m507.bin")
 DATADIR(MP5_M526, "mp5/data/m526.bin")
+DATADIR(MP5_M524, "mp5/data/m524.bin")
+DATADIR(MP5_EFFECT, "mp5/data/effect.bin")
 DATADIR(MP5_MGCONST, "mp5/data/mgconst.bin")
 DATADIR(MP5_INSTPIC, "mp5/data/instpic.bin")
 DATADIR(MP5_MARIO, "mp5/data/mario.bin")

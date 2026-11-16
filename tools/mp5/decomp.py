@@ -40,6 +40,7 @@ CTX_HEADERS = """typedef int bool;
 #include "game/window.h"
 #include "game/hsfex.h"
 #include "game/mgdata.h"
+#include "game/mg/timer.h"
 #include "math.h"
 """
 

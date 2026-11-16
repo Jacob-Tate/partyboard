@@ -44,13 +44,22 @@ def join(chunks):
 
 
 def unused_functions(asm):
-    fns = re.findall(r'^\.fn (\w+),', asm, re.M)
-    dead = []
-    for f in fns:
-        refs = len(re.findall(r'\b%s\b' % re.escape(f), asm)) - 2  # .fn + .endfn
-        if refs <= 0 and f not in ('ObjectSetup',):
-            dead.append(f)
-    return set(dead) | {'_prolog', '_epilog'}
+    """Functions nothing references, then (repeatedly) those only dead functions reference."""
+    bodies = dict(re.findall(r'^\.fn (\w+),[^\n]*\n(.*?)^\.endfn', asm, re.M | re.S))
+    outside = re.sub(r'^\.fn \w+,[^\n]*\n.*?^\.endfn[^\n]*\n', '', asm, flags=re.M | re.S)
+    dead = {'_prolog', '_epilog'}
+    while True:
+        new = set()
+        for f in bodies:
+            if f in dead or f == 'ObjectSetup':
+                continue
+            pat = re.compile(r'\b%s\b' % re.escape(f))
+            live_refs = sum(len(pat.findall(b)) for g, b in bodies.items() if g not in dead and g != f)
+            if live_refs == 0 and not pat.search(outside):
+                new.add(f)
+        if not new:
+            return dead
+        dead |= new
 
 
 def parse_types(path):
@@ -59,6 +68,7 @@ def parse_types(path):
         return hints
     s = open(path, encoding='utf-8').read()
     hints['layouts'] = struct_layouts(s)
+    hints['objexpr'] = dict(re.findall(r'^//\s*objexpr (\w+):\s*(\w+)', s, re.M))
     hints['statics'] = dict(re.findall(r'^//\s*static (\w+):\s*(.+?)\s*$', s, re.M))
     for m in re.finditer(r'^//\s*var (\w+) (\w+):\s*(\w+)', s, re.M):
         hints['vars'].setdefault(m.group(1), {})[m.group(2)] = m.group(3)
@@ -245,12 +255,25 @@ def fix_particles(name, body):
 
 
 def fix_objdata(name, body, hints):
+    layouts = hints['layouts']
+    # objects whose ->data type is known from the expression (a global object or object table)
+    for expr, t in hints.get('objexpr', {}).items():
+        e = r'\b%s(?:\[(?:[^\[\]]|\[[^\]]*\])*\])?' % re.escape(expr)
+        body = re.sub(r'(?<![\w)])\*(%s)->data\b' % e, lambda m: '((%s *)%s->data)->%s' % (t, m.group(1), layouts[t][0][3] if layouts.get(t) else 'unk0'), body)
+        body = re.sub(r'(%s)->data->(unk[0-9A-F]+)\b' % e,
+                      lambda m: '((%s *)%s->data)->%s' % (t, m.group(1), field_path(t, int(m.group(2)[3:], 16), layouts) or m.group(2)), body)
+        for v in set(re.findall(r'(\w+) = %s->data;' % e, body)):
+            body = re.sub(r'^(    )(?:void|M2C_UNK) \*%s;$' % v, r'\g<1>%s *%s;' % (t, v), body, flags=re.M)
+            body = resolve_fields(body, v, t, layouts)
     t = hints['objdata_fn'].get(name, hints['objdata'])
     if not t:
         return body
     for v in set(re.findall(r'(\w+) = [^;\n]*->data;', body)):
-        body = re.sub(r'\bvoid \*%s;' % v, '%s *%s;' % (t, v), body)
-    body = re.sub(r'((?:\w+|\w+\[[^\]]+\]))->data->', r'((%s *)\1->data)->' % t, body)
+        if re.search(r'^    void \*%s;$' % v, body, re.M):
+            body = re.sub(r'\bvoid \*%s;' % v, '%s *%s;' % (t, v), body)
+            body = resolve_fields(body, v, t, layouts)
+    body = re.sub(r'((?:\w+|\w+\[[^\]]+\]))->data->(unk[0-9A-F]+)\b',
+                  lambda m: '((%s *)%s->data)->%s' % (t, m.group(1), field_path(t, int(m.group(2)[3:], 16), layouts) or m.group(2)), body)
     return body
 
 
@@ -357,7 +380,7 @@ def deref_work(body, layouts):
         off, sz, cnt, name = fields[0]
         first = name + ('[0]' if cnt > 1 else '')
         for v in set(re.findall(r'\b%s \*(\w+);' % t, body)):
-            body = re.sub(r'((?:[=(,!<>] |\())\*%s\b(?!\s*(?:\[|->|\+|=[^=]))' % v, lambda m: '%s%s->%s' % (m.group(1), v, first), body)
+            body = re.sub(r'((?:[=(,!<>] |\(|\[|\) ))\*%s\b(?!\s*(?:\[|->|\+|=[^=]))' % v, lambda m: '%s%s->%s' % (m.group(1), v, first), body)
     return body
 
 
@@ -368,6 +391,13 @@ def malloc_sizeof(body, layouts):
         if t in layouts:
             body = re.sub(r'\b%s = HuMemDirectMallocNum\((\w+), (?:0x[0-9A-F]+|\d+), ' % v,
                           lambda m: '%s = HuMemDirectMallocNum(%s, sizeof(%s), ' % (v, m.group(1), t), body)
+    # obj->data = HuMemDirectMallocNum(h, 0x68, ...); ... v = obj->data; with v a T*
+    for t, v in re.findall(r'^    (\w+) \*(\w+);$', body, re.M):
+        if t not in layouts:
+            continue
+        for m in re.finditer(r'\b%s = (\w+)->data;' % v, body):
+            body = re.sub(r'\b(%s->data = HuMemDirectMallocNum\(\w+, )(?:0x[0-9A-F]+|\d+)(, )' % re.escape(m.group(1)),
+                          lambda mm: '%ssizeof(%s)%s' % (mm.group(1), t, mm.group(2)), body)
     return body
 
 
@@ -598,6 +628,7 @@ def run(code, asm, types_path, symbols=None):
             text = fix_objdata(name, text, hints)
             for v, t in hints['vars'].get(name, {}).items():
                 text = re.sub(r'^(    )(?:[\w ]+\*|M2C_UNK|\?) ?%s;$' % v, r'\g<1>%s *%s;' % (t, v), text, flags=re.M)
+                text = resolve_fields(text, v, t, hints['layouts'])
             text = fix_struct_arrays(text, hints['layouts'])
             text = element_pointers(text, hints['layouts'])
             text = deref_work(text, hints['layouts'])
@@ -651,6 +682,10 @@ def run(code, asm, types_path, symbols=None):
     code = re.sub(r'(OSReport\([^;]*?), \(u32\) \(u64\) \w+, \(bitwise f32\) \w+\)', r'\1)', code)
     code = re.sub(r'(OSReport\([^;]*?), \(bitwise f32\) \w+\)', r'\1)', code)
     code = unset_f9(code)
+    code = re.sub(r'\(bitwise f32\) (-?\d+\.\d+)\b', r'\1f', code)
+    for v in set(re.findall(r'^    (?:Vec|Point3d|HuVecF) (\w+);$', code, re.M)):
+        code = re.sub(r'\(bitwise (?:f32|s32)\) %s\b(?![.\[])' % v, v + '.x', code)
+    code = re.sub(r'(?m)^[^\n]*/\* extern \*/\n', '', code)
     code = fill_initializers(code, asm)
     # partial / odd-sized copies m2c couldn't express: a byte copy is exact
     code = code.replace('M2C_STRUCT_COPY(', 'memcpy(')

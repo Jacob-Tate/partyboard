@@ -417,6 +417,7 @@ EXPORTS
     CharModelFxFlagSet
     CharNpcDustSet
     CharNpcDustVoiceOffSet
+    CharModelIdGet
     CharModelItemHookGet
     CharModelHookDustCreate
     CharModelKill

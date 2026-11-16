@@ -733,6 +733,7 @@ void CharFXStop(s16 charNo, s16 seId) {
 static const s16 mp5SndGrpTbl[][2] = {
     { DLL_m507dll, 27 },
     { DLL_m526dll, 46 },
+    { DLL_m524dll, 44 },
     { DLL_NONE, -1 },
 };
 

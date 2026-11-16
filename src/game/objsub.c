@@ -1187,6 +1187,25 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         MP5_MESSID(MP5_MESSDIR_MGINST, 183), // inst_mess[3]
     },
     {
+        // MP5 m524, ported from the m2c draft (tools/mp5).
+        DLL_m524dll, // ovl
+        0, // type
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(524), // name_mess
+        DATADIR_MP5_M524, // data_dir
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 25), // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 25), // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 80), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 81), // inst_mess[1]
+        0, // inst_mess[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 83), // inst_mess[3]
+    },
+    {
         ((u16)DLL_NONE), // ovl
         0, // type
         0, // flag

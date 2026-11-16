@@ -214,6 +214,12 @@ void CharClose(void)
     effectAMemP = NULL;
 }
 
+// For the Mario Party 5 ports (include/REL/mp5compat.h): the character's model.
+HU3DMODELID CharModelIdGet(s16 charNo)
+{
+    return charWork[charNo].modelId;
+}
+
 HU3DMODELID CharModelCreate(s16 charNo, s16 model)
 {
     s16 sp8 = 0;

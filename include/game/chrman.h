@@ -30,6 +30,7 @@ void CharMotionClose(s16 charNo);
 void CharDataClose(s16 charNo);
 void CharClose(void);
 HU3DMODELID CharModelCreate(s16 charNo, s16 model);
+HU3DMODELID CharModelIdGet(s16 charNo);
 HU3DMOTID CharMotionCreate(s16 charNo, s32 data_num);
 void CharMotionNoSet(s16 charNo, HU3DMOTID motId, s32 motNo);
 void CharMotionKill(s16 charNo, u32 motId);

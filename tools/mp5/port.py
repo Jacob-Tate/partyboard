@@ -31,11 +31,17 @@ subs = [
     (r'(HuDataSelHeapReadNum\([^,]+), 0x10000000U?, HEAP_MODEL\)', r'\1, MEMORY_DEFAULT_NUM, HEAP_DATA)'),
     (r'HuMemDirectMallocNum\(HEAP_HEAP, ([^,]+), 0x10000000U?\)', r'HuMemDirectMallocNum(HEAP_SYSTEM, \1, MEMORY_DEFAULT_NUM)'),
     (r'\bPoint3d\b', 'Vec'),
+    (r'\bPSVEC(\w+)\(', r'VEC\1('),
+    (r'\bPSMTX(\w+)\(', r'MTX\1('),
     (r'\bOMOBJ\b', 'omObjData'),
     (r'Hu3DCameraPosGet\(', 'Mp5CameraPosGet('),
     (r'WipeCreate\(([^,]+), WIPE_TYPE_WHITEFADE, ', r'Mp5WipeWhite(\1, '),
     # m2c drafts: MP5 character motions by data number; DK (no MP5 motions) needs an MP4 motion picked by hand
     (r'\bCharMotionCreate\(([^,]+), ([^;]+)\);', r'Mp5CharMotionCreateData(\1, \2, 0 /* TODO(mp5): MP4 motion for DK */);'),
+    # m2c drafts: print8(x, y, "fmt", scale, ...) -> MP4's print8(x, y, scale, "fmt", ...)
+    (r'\bprint8\(([^,]+), ([^,]+), ("[^"]*"), ([^,)]+)', r'print8(\1, \2, \4, \3'),
+    # HU3DPARMANPARAM: MP4 declares the second field as char[2]
+    (r'(HU3DPARMANPARAM \w+ = \{\n\s*[^,\n]+,\n\s*)0,', r'\1{ 0 },'),
     # decathlon / story scores have no MP4 counterpart
     (r'\bGwPlayer\[.*?\]\.mgScore = [^;]*;', '/* MP5 decathlon score */'),
     # m2c drafts: MP5 wipe types by number (5 = PREVTYPE, 6 = WHITEFADE); MP4's enum differs
