@@ -1225,6 +1225,26 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         MP5_MESSID(MP5_MESSDIR_MGINST, 168), // inst_mess[3]
     },
     {
+        // Wind Wavers, ported from Mario Party 5's m554 m2c draft (1 vs 1). MP4 has no duel category:
+        // type 6 is its 1-vs-1 (story) type, which shows two player slots in Mini-Game mode.
+        DLL_m554dll, // ovl
+        6, // type
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(554), // name_mess
+        DATADIR_MP5_M554, // data_dir
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 55), // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 55), // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 330), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 331), // inst_mess[1]
+        0, // inst_mess[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 333), // inst_mess[3]
+    },
+    {
         ((u16)DLL_NONE), // ovl
         0, // type
         0, // flag
