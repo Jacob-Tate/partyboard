@@ -47,8 +47,13 @@ subs = [
     # m2c drafts: MP5 wipe types by number (5 = PREVTYPE, 6 = WHITEFADE); MP4's enum differs
     (r'\bWipeCreate\(([^,]+), 5, ', r'WipeCreate(\1, WIPE_TYPE_NORMAL, '),
     (r'\bWipeCreate\(([^,]+), 6, ', r'Mp5WipeWhite(\1, '),
-    (r'HuAudJinglePlay\(MSM_STREAM_JNGL_MG_WIN\)', 'HuAudSStreamPlay(MP5_JINGLE_WIN)'),
-    (r'HuAudJinglePlay\(MSM_STREAM_JNGL_MG_DRAW\)', 'HuAudSStreamPlay(MP5_JINGLE_DRAW)'),
+    # 0x81 = CROSSCOPY: MP5's cross-fade OUT only grabs the frame (one tick), its IN fades from it; MP4's
+    # cross-fade does the same with an OUT of 1 frame (as w06's bowser.c uses it)
+    (r'\bWipeCreate\((2|WIPE_MODE_OUT), (?:0x81|WIPE_TYPE_CROSSCOPY), [^;]*\);', r'WipeCreate(\1, WIPE_TYPE_CROSS, 1);'),
+    (r'\bWipeCreate\((?:1|WIPE_MODE_IN), (?:0x81|WIPE_TYPE_CROSSCOPY), ', r'Mp5WipeCrossIn('),
+    # MP5 code calls frandmod (u32) with a float in hand and no prototype, so it gets whatever r3 held; the
+    # intent (a random start frame) is the float converted
+    (r'\bfrandmod\(\(bitwise u32\) ', 'frandmod((u32) '),
 ]
 for a, b in subs:
     s = re.sub(a, b, s)

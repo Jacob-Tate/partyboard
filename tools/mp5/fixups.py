@@ -21,6 +21,25 @@ PARTICLE_DATA = {'unk0': 'time', 'unk2': 'parManId', 'unk4': 'unk04', 'unk6': 'c
                  'unk20': 'speedDecay', 'unk24': 'colorIdx', 'unk28': 'scaleBase', 'unk2C': 'scale',
                  'unk30': 'zRot', 'unk34': 'pos.x', 'unk38': 'pos.y', 'unk3C': 'pos.z', 'unk40': 'color.r',
                  'unk41': 'color.g', 'unk42': 'color.b', 'unk43': 'color.a'}
+# GameCube sizes of engine structs MP5 code walks with pointer arithmetic
+ENGINE_GC_SIZE = {'HSFMATERIAL': 0x3C}
+
+# MP5's OMOBJ (GC layout), so `// var fn v: OMOBJ` hints resolve raw offsets (->unk48->unkE = ->mtnId[7])
+OMOBJ_LAYOUT = """typedef struct {
+    u16 stat;
+    s16 objNext, prio, prev, next, nextNo, grpNo;
+    u16 memberNo;
+    u32 mode;
+    u32 func;
+    Vec trans, rot, scale;
+    u16 mdlcnt;
+    s16 *mdlId;
+    u16 mtncnt;
+    s16 *mtnId;
+    u32 work[4];
+    void *data;
+} OMOBJ;
+"""
 FN_START = re.compile(r'(?m)^(?=[A-Za-z_][^\n;=]*\b\w+\([^\n;]*\) \{$)')
 
 
@@ -47,6 +66,8 @@ def unused_functions(asm):
     """Functions nothing references, then (repeatedly) those only dead functions reference."""
     bodies = dict(re.findall(r'^\.fn (\w+),[^\n]*\n(.*?)^\.endfn', asm, re.M | re.S))
     outside = re.sub(r'^\.fn \w+,[^\n]*\n.*?^\.endfn[^\n]*\n', '', asm, flags=re.M | re.S)
+    # a function's name in a string (OSReport("MgFlowSet : ...")) is not a reference
+    outside = re.sub(r'^\s*\.string [^\n]*\n', '', outside, flags=re.M)
     dead = {'_prolog', '_epilog'}
     while True:
         new = set()
@@ -67,7 +88,7 @@ def parse_types(path):
     if not path:
         return hints
     s = open(path, encoding='utf-8').read()
-    hints['layouts'] = struct_layouts(s)
+    hints['layouts'] = struct_layouts(OMOBJ_LAYOUT + s)
     hints['objexpr'] = dict(re.findall(r'^//\s*objexpr (\w+):\s*(\w+)', s, re.M))
     hints['statics'] = dict(re.findall(r'^//\s*static (\w+):\s*(.+?)\s*$', s, re.M))
     for m in re.finditer(r'^//\s*var (\w+) (\w+):\s*(\w+)', s, re.M):
@@ -121,7 +142,8 @@ def resolve_fields(body, var, t, layouts):
     def sub(m):
         p = field_path(t, int(m.group(1), 16), layouts)
         return '%s->%s' % (var, p) if p else m.group(0)
-    return re.sub(r'\b%s->unk([0-9A-F]+)\b(?!\[)' % re.escape(var), sub, body)
+    # (not ->unkN[ or ->unkN.: m2c already typed those, when a hint names a type it inferred itself)
+    return re.sub(r'\b%s->unk([0-9A-F]+)\b(?![\[.])' % re.escape(var), sub, body)
 
 
 def element_pointers(body, layouts):
@@ -259,6 +281,9 @@ def fix_objdata(name, body, hints):
     # objects whose ->data type is known from the expression (a global object or object table)
     for expr, t in hints.get('objexpr', {}).items():
         e = r'\b%s(?:\[(?:[^\[\]]|\[[^\]]*\])*\])?' % re.escape(expr)
+        # first element of an object table: (*tbl)->data->unkN
+        body = re.sub(r'\(\*(%s)\)->data->(unk[0-9A-F]+)\b' % re.escape(expr),
+                      lambda m: '((%s *)%s[0]->data)->%s' % (t, m.group(1), field_path(t, int(m.group(2)[3:], 16), layouts) or m.group(2)), body)
         body = re.sub(r'(?<![\w)])\*(%s)->data\b' % e, lambda m: '((%s *)%s->data)->%s' % (t, m.group(1), layouts[t][0][3] if layouts.get(t) else 'unk0'), body)
         body = re.sub(r'(%s)->data->(unk[0-9A-F]+)\b' % e,
                       lambda m: '((%s *)%s->data)->%s' % (t, m.group(1), field_path(t, int(m.group(2)[3:], 16), layouts) or m.group(2)), body)
@@ -398,6 +423,8 @@ def malloc_sizeof(body, layouts):
         for m in re.finditer(r'\b%s = (\w+)->data;' % v, body):
             body = re.sub(r'\b(%s->data = HuMemDirectMallocNum\(\w+, )(?:0x[0-9A-F]+|\d+)(, )' % re.escape(m.group(1)),
                           lambda mm: '%ssizeof(%s)%s' % (mm.group(1), t, mm.group(2)), body)
+            body = re.sub(r'\bmemset\((%s->data), 0, (?:0x[0-9A-F]+|\d+)\)' % re.escape(m.group(1)),
+                          lambda mm: 'memset(%s, 0, sizeof(%s))' % (mm.group(1), t), body)
     return body
 
 
@@ -610,6 +637,23 @@ def synth_globals(code, info):
     return pre + code
 
 
+def camera_move_entry(code):
+    """MP5 RELs' library MgCameraMoveEntry(cam, to, frames): it returns the move object (callers keep it to
+    poll the move; m2c sees no return value), and its 0x48-byte memcpys are whole-camera copies."""
+    m = re.search(r'^void (MgCameraMoveEntry\((\w+) \*arg0, \w+ \*arg1, f32 farg0\)) \{\n(.*?)\n\}\n', code, re.M | re.S)
+    if not m:
+        return code
+    body = m.group(3).replace('        return;\n', '        return NULL;\n')
+    mv = re.search(r'(\w+) = (\w+)->data;', body)
+    if not mv:
+        return code
+    body = re.sub(r'    memcpy\([^;]*&%s->unk4, [^;]*\);\n' % mv.group(1), '    %s->unk4 = *arg0;\n' % mv.group(1), body)
+    body = re.sub(r'    memcpy\(\(s32\) \(%s \+ 0x48\)[^;]*\);\n' % mv.group(1), '    %s->unk4C = *arg1;\n' % mv.group(1), body)
+    body += '\n    return %s;' % mv.group(2)
+    code = code[:m.start()] + 'OMOBJ *%s {\n%s\n}\n' % (m.group(1), body) + code[m.end():]
+    return re.sub(r'\w+ = \(bitwise f32\) MgCameraMoveEntry\(', 'MgCameraMoveEntry(', code)
+
+
 def run(code, asm, types_path, symbols=None):
     hints = parse_types(types_path)
     dead = unused_functions(asm)
@@ -627,7 +671,7 @@ def run(code, asm, types_path, symbols=None):
             text = text.replace('f32 (*mtx)[4]', 'Mtx mtx')
             text = fix_objdata(name, text, hints)
             for v, t in hints['vars'].get(name, {}).items():
-                text = re.sub(r'^(    )(?:[\w ]+\*|M2C_UNK|\?) ?%s;$' % v, r'\g<1>%s *%s;' % (t, v), text, flags=re.M)
+                text = re.sub(r'^(    )(?:[\w ]+\*|M2C_UNK|\?|[su]32) ?%s;$' % v, r'\g<1>%s *%s;' % (t, v), text, flags=re.M)
                 text = resolve_fields(text, v, t, hints['layouts'])
             text = fix_struct_arrays(text, hints['layouts'])
             text = element_pointers(text, hints['layouts'])
@@ -647,6 +691,10 @@ def run(code, asm, types_path, symbols=None):
             text = re.sub(r'->(mdlId|mtnId)->unk([0-9A-F]+)\b', lambda m: '->%s[%d]' % (m.group(1), int(m.group(2), 16) // 2), text)
             text = re.sub(r'\bsaved_reg_\w+\b', '0 /* TODO(mp5): uninitialised in the original */', text)
             text = re.sub(r'(\(&\w+\[[^\]]+\] \+ \(\w+ \* 0x[0-9A-F]+\)\))', r'\1 /* TODO(mp5): byte offset */', text)
+            # engine struct pointers stepped by their GameCube size: one element
+            for t, size in ENGINE_GC_SIZE.items():
+                for v in re.findall(r'^    %s \*(\w+);$' % t, text, re.M):
+                    text = re.sub(r'^(\s*)%s \+= 0x%X;$' % (v, size), r'\g<1>%s++;' % v, text, flags=re.M)
             text = re.sub(r'^(\s*\w+ \+= 0x[0-9A-F]+;)$', r'\1 /* TODO(mp5): byte step? */', text, flags=re.M)
         chunks.append((name, text))
     code = join(chunks)
@@ -689,6 +737,7 @@ def run(code, asm, types_path, symbols=None):
     code = fill_initializers(code, asm)
     # partial / odd-sized copies m2c couldn't express: a byte copy is exact
     code = code.replace('M2C_STRUCT_COPY(', 'memcpy(')
+    code = camera_move_entry(code)
     code = trim_call_args(code, param_types(code))
     code = prototypes_from_definitions(code)
     for name, t in hints.get('statics', {}).items():

@@ -141,12 +141,10 @@ M524Camera *fn_1_35A8(M524Camera *arg0);
 void fn_1_3694(M524Camera *arg0);
 void fn_1_3DD0(M524Camera *arg0);
 void fn_1_4898(omObjData *arg0);
-OMOBJ *MgCameraMoveEntry(M524Camera *arg0, M524Camera *arg1, f32 farg0);
+omObjData *MgCameraMoveEntry(M524Camera *arg0, M524Camera *arg1, f32 farg0);
 void fn_1_4C18(omObjData *arg0);
 void fn_1_50B0(omObjData *arg0);
 void fn_1_5160(omObjData *arg0);
-void MgFlowSet(omObjData *arg0, s32 arg1);
-void MgFlowNext(omObjData *arg0);
 void fn_1_5454(omObjData *arg0);
 void fn_1_54CC(omObjData *arg0);
 void fn_1_55EC(omObjData *arg0);
@@ -1402,7 +1400,7 @@ void fn_1_4898(omObjData *arg0) {
     }
 }
 
-OMOBJ *MgCameraMoveEntry(M524Camera *arg0, M524Camera *arg1, f32 farg0) {
+omObjData *MgCameraMoveEntry(M524Camera *arg0, M524Camera *arg1, f32 farg0) {
     f32 sp8;
     omObjData *temp_r29;
     M524CamMove *temp_r31;
@@ -1474,29 +1472,7 @@ void fn_1_5160(omObjData *arg0) {
 }
 
 
-void MgFlowSet(omObjData *arg0, s32 arg1) {
-    M524Flow *temp_r31;
 
-    temp_r31 = arg0->data;
-    if (arg1 >= (s32) temp_r31->unk8) {
-        OSReport("MgFlowSet : Value is Max Over\n");
-        return;
-    }
-    temp_r31->unk0 = arg1;
-}
-
-void MgFlowNext(omObjData *arg0) {
-    s32 temp_r4;
-    M524Flow *temp_r31;
-
-    temp_r31 = arg0->data;
-    temp_r4 = temp_r31->unk0;
-    if (temp_r4 == (s32) (temp_r31->unk8 - 1)) {
-        OSReport("MgFlowNext : Value is Max Over\n", temp_r4);
-        return;
-    }
-    temp_r31->unk0 = (s32) (temp_r31->unk0 + 1);
-}
 
 
 
