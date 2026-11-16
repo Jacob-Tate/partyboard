@@ -953,9 +953,7 @@ loop_2:
 }
 
 void fn_1_2630(omObjData *arg0) {
-    f32 sp10;
-    f32 spC;
-    f32 sp8;
+    Vec sp8;
     M524Player *temp_r30;
     M524Coin *temp_r31;
 
@@ -969,11 +967,11 @@ void fn_1_2630(omObjData *arg0) {
     temp_r31->unk8 = (f32) (temp_r31->unk8 - temp_r31->unk14);
     omSetTra(arg0, temp_r31->unk4, temp_r31->unk8, temp_r31->unkC);
     if (temp_r31->unk8 <= CharModelHeightGet(temp_r30->unk2)) {
-        sp8 = temp_r30->unk10;
-        spC = temp_r31->unk8;
-        sp10 = temp_r30->unk18;
+        sp8.x = temp_r30->unk10;
+        sp8.y = temp_r31->unk8;
+        sp8.z = temp_r30->unk18;
         HuAudFXPlayPan(7, lbl_1_data_228[temp_r30->unk0]);
-        CharEffectCoinGlowCreate((s16) lbl_1_data_108.unk0, (Vec *) &sp8);
+        CharEffectCoinGlowCreate((s16) lbl_1_data_108.unk0, &sp8);
         temp_r30->unk5C = (s32) (temp_r30->unk5C - 1);
         arg0->func = fn_1_27D8;
     }

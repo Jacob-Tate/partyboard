@@ -84,11 +84,12 @@ def unused_functions(asm):
 
 
 def parse_types(path):
-    hints = {'objdata': None, 'objdata_fn': {}, 'arrays2d': {}, 'arrays1d': {}, 'particlework': None, 'layouts': {}, 'vars': {}, 'ptrarrays2d': {}}
+    hints = {'globals': {}, 'objdata': None, 'objdata_fn': {}, 'arrays2d': {}, 'arrays1d': {}, 'particlework': None, 'layouts': {}, 'vars': {}, 'ptrarrays2d': {}}
     if not path:
         return hints
     s = open(path, encoding='utf-8').read()
     hints['layouts'] = struct_layouts(OMOBJ_LAYOUT + s)
+    hints['globals'] = {g: t for t, g in re.findall(r'^extern (\w+) (\w+);', s, re.M) if t in hints['layouts']}
     hints['objexpr'] = dict(re.findall(r'^//\s*objexpr (\w+):\s*(\w+)', s, re.M))
     hints['statics'] = dict(re.findall(r'^//\s*static (\w+):\s*(.+?)\s*$', s, re.M))
     for m in re.finditer(r'^//\s*var (\w+) (\w+):\s*(\w+)', s, re.M):
@@ -117,6 +118,60 @@ def parse_types(path):
 
 
 FIELD_TYPES = {}
+FIELD_DIMS = {}  # (struct, field) -> [rows, cols] of 2-D array fields
+STRUCT_SIZE = {}  # --types header struct -> GC size
+
+
+def element_overflow(body):
+    """p->f[i].unkOFF with f a `T *` field and OFF past T's GC size: m2c's byte offset for p->f[i + OFF / size]
+    (T a --types struct or a scalar: s32 *tbl; tbl[i].unk3C = tbl[i + 15])."""
+    seen = {}
+    for (st, name), ft in FIELD_TYPES.items():
+        if ft.endswith(' *'):  # (a scalar field of the same name can't be indexed)
+            seen.setdefault(name, set()).add(ft)
+    for (st, name), ft in FIELD_TYPES.items():
+        if not ft.endswith(' *') or len(seen[name]) > 1:
+            continue
+        t = ft[:-2]
+        size = STRUCT_SIZE.get(t) or GC_SIZE.get(t)
+        if not size:
+            continue
+
+        def sub(m, t=t, size=size):
+            off = int(m.group(3), 16)
+            if t in STRUCT_SIZE and off < size:
+                return m.group(0)
+            if t not in STRUCT_SIZE and off % size:
+                return m.group(0)
+            idx = '%s + 0x%X' % (m.group(2), off // size) if off // size else m.group(2)
+            if t in STRUCT_SIZE:
+                return '%s[%s].unk%X' % (m.group(1), idx, off % size)
+            return '%s[%s]' % (m.group(1), idx)
+        body = re.sub(r'((?:->|\.)%s)\[([^\[\]]+)\]\.unk([0-9A-F]+)\b' % name, sub, body)
+    return body
+
+
+def memset_sizeof(code, types_src):
+    """memset(g or a pointer global, 0, <GC size of its struct>) -> sizeof: the PC layout differs (pointers)."""
+    for t, g in re.findall(r'^extern (\w+) ?\*? ?(\w+);', types_src, re.M):
+        if t in STRUCT_SIZE:
+            code = re.sub(r'(\bmemset\((?:\([^()]*\) )?&?%s, 0, )0x%X\)' % (re.escape(g), STRUCT_SIZE[t]),
+                          r'\1sizeof(%s))' % t, code)
+    return code
+
+
+def field_2d(code, globs, layouts):
+    """(&g + (i * rowbytes) + (j * elem))->unkOFF on a typed global whose 2-D array field starts at OFF:
+    m2c's byte arithmetic for g.f[i][j]."""
+    for g, t in globs.items():
+        for off, sz, cnt, name in layouts.get(t, []):
+            dims = FIELD_DIMS.get((t, name))
+            if not dims:
+                continue
+            pat = r'\(&%s \+ \((.+?) \* (?:0x%X|%d)\) \+ \((.+?) \* %d\)\)->unk%X\b' % (
+                re.escape(g), sz * dims[1], sz * dims[1], sz, off)
+            code = re.sub(pat, lambda m: '%s.%s[%s][%s]' % (g, name, m.group(1), m.group(2)), code)
+    return code
 
 
 def field_path(t, off, layouts):
@@ -187,8 +242,13 @@ def struct_layouts(s):
             if esz is None:
                 break
             for decl in fm.group(3).split(','):
-                dm = re.match(r'\s*\*?\s*(\w+)\s*(?:\[(\w+)\])?', decl)
-                cnt = int(dm.group(2), 0) if dm.group(2) else 1
+                dm = re.match(r'\s*\*?\s*(\w+)\s*((?:\[\w+\])*)', decl)
+                dims = [int(x, 0) for x in re.findall(r'\[(\w+)\]', dm.group(2))]
+                cnt = 1
+                for x in dims:
+                    cnt *= x
+                if len(dims) == 2:
+                    FIELD_DIMS[(m.group(2), dm.group(1))] = dims
                 sz = 4 if decl.strip().startswith('*') else esz
                 al = min(sz, 4) if sz in (1, 2, 4) else 4
                 off = (off + al - 1) // al * al
@@ -197,6 +257,7 @@ def struct_layouts(s):
                 off += sz * cnt
         else:
             sizes[m.group(2)] = (off + 3) // 4 * 4
+            STRUCT_SIZE[m.group(2)] = sizes[m.group(2)]
             layouts[m.group(2)] = fields
     return layouts
 
@@ -448,6 +509,10 @@ def stack_vecs(body, ptypes):
             am = re.match(r'^(?:\(\w+ \*\) )?&(sp[0-9A-F]+)$', arg)
             if am and i < len(pt) and pt[i].replace(' ', '') in ('Vec*', 'HuVecF*', 'Point3d*'):
                 kinds[am.group(1)] = 'Vec'
+    # engine calls (Hu3DModelPosSetV, Hu3DShadowPosSet, ...): a float local passed as a Vec * starts a Vec
+    for m in re.finditer(r'\((?:Vec|Point3d|HuVecF) \*\) &(sp[0-9A-F]+)\b(?!\[)', body):
+        if re.search(r'^    f32 %s;$' % m.group(1), body, re.M):
+            kinds[m.group(1)] = 'Vec'
     for m in re.finditer(r'\(f32 \(\*\)\[4\]\) &(sp[0-9A-F]+)\[0\]', body):
         kinds[m.group(1)] = 'Mtx'
     for b, kind in kinds.items():
@@ -691,8 +756,10 @@ def run(code, asm, types_path, symbols=None):
             text = re.sub(r'->(mdlId|mtnId)->unk([0-9A-F]+)\b', lambda m: '->%s[%d]' % (m.group(1), int(m.group(2), 16) // 2), text)
             text = re.sub(r'\bsaved_reg_\w+\b', '0 /* TODO(mp5): uninitialised in the original */', text)
             text = re.sub(r'(\(&\w+\[[^\]]+\] \+ \(\w+ \* 0x[0-9A-F]+\)\))', r'\1 /* TODO(mp5): byte offset */', text)
-            # engine struct pointers stepped by their GameCube size: one element
-            for t, size in ENGINE_GC_SIZE.items():
+            text = field_2d(text, hints['globals'], hints['layouts'])
+            text = element_overflow(text)
+            # engine / --types struct pointers stepped by their GameCube size: one element
+            for t, size in list(ENGINE_GC_SIZE.items()) + list(STRUCT_SIZE.items()):
                 for v in re.findall(r'^    %s \*(\w+);$' % t, text, re.M):
                     text = re.sub(r'^(\s*)%s \+= 0x%X;$' % (v, size), r'\g<1>%s++;' % v, text, flags=re.M)
             text = re.sub(r'^(\s*\w+ \+= 0x[0-9A-F]+;)$', r'\1 /* TODO(mp5): byte step? */', text, flags=re.M)
@@ -735,6 +802,8 @@ def run(code, asm, types_path, symbols=None):
         code = re.sub(r'\(bitwise (?:f32|s32)\) %s\b(?![.\[])' % v, v + '.x', code)
     code = re.sub(r'(?m)^[^\n]*/\* extern \*/\n', '', code)
     code = fill_initializers(code, asm)
+    if types_path:
+        code = memset_sizeof(code, open(types_path, encoding='utf-8').read())
     # partial / odd-sized copies m2c couldn't express: a byte copy is exact
     code = code.replace('M2C_STRUCT_COPY(', 'memcpy(')
     code = camera_move_entry(code)

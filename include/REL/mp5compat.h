@@ -313,13 +313,21 @@ static const struct {
     { TRUE, 202, 72 }, // intro pose (m570): fist raised
     { FALSE, 15, 20 }, // knocked back (m570 losing a round): staggers back
     { FALSE, 81, 24 }, // dejected after being knocked out (m570): MP4's lose
+    { TRUE, 176, 59 }, // waving the fan pole (m554 Wind Wavers, loops): a rhythmic forward arm pump
+    { FALSE, 47, 23 }, // joyful hands-clasped win (m554): MP4's win
+    { FALSE, 43, 19 }, // flung away by the wind (m554 loser, loops): knocked back
 };
 
 static s16 Mp5CharMotionCreateData(s16 charNo, u32 dataNum, s32 mp4MotNo)
 {
-    BOOL inCharArchive = (s32)(dataNum & ~0xFFFF) == DATADIR_MP5_MARIO;
+    BOOL inCharArchive = FALSE;
     u32 no = dataNum & 0xFFFF;
     s32 i;
+    for (i = 0; i < 8; i++) {
+        if (mp5CharDir[i] >= 0 && (s32)(dataNum & ~0xFFFF) == mp5CharDir[i]) {
+            inCharArchive = TRUE;
+        }
+    }
     for (i = 0; i < (s32)(sizeof(mp5DkMotTbl) / sizeof(mp5DkMotTbl[0])); i++) {
         if (mp5DkMotTbl[i].inCharArchive == inCharArchive && mp5DkMotTbl[i].mp5MotNo == no) {
             return Mp5CharMotionCreate(charNo, no, inCharArchive, mp5DkMotTbl[i].mp4MotNo);
@@ -521,6 +529,186 @@ static void MgScoreWinDispSet(s16 gid, BOOL disp)
     else {
         HuSprAttrSet(gid, 0, HUSPR_ATTR_DISPOFF);
     }
+}
+
+// ---- Camera views (omCameraView*): MP5 objsysobj.c, eased moves of CRot/Center/CZoom (or the M arrays) ----
+
+typedef struct omCameraView_s {
+    HuVecF center;
+    HuVecF rot;
+    float zoom;
+} OMCAMERAVIEW;
+
+#define OM_CAMERA_SINGLE 0x10000
+#define OM_CAMERAMOVE_SIMPLE 0
+#define OM_CAMERAMOVE_COS 1
+#define OM_CAMERAMOVE_LINEAR 2
+
+typedef struct {
+    s16 no; // -1: idle
+    s16 single; // moves CRot/Center/CZoom instead of CRotM[no]...
+    s16 moveType;
+    HuVecF centerEnd;
+    HuVecF rotEnd;
+    float zoomEnd;
+    u32 maxTime;
+    HUPROCESS *process;
+} MP5CAMERAVIEWWORK;
+
+static MP5CAMERAVIEWWORK mp5CameraViewWork[16];
+
+// MP5's omInitObjMan resets the camera views; a port DLL's statics can outlive a previous play.
+static void omCameraViewInit(void)
+{
+    s16 i;
+    for (i = 0; i < 16; i++) {
+        mp5CameraViewWork[i].no = -1;
+    }
+}
+
+static HUPROCESS *Mp5InitObjMan(s16 max, s32 prio)
+{
+    omCameraViewInit();
+    return omInitObjMan(max, prio);
+}
+#define omInitObjMan Mp5InitObjMan
+
+static void omCameraViewSetMulti(s16 cameraBit, OMCAMERAVIEW *view)
+{
+    s16 i;
+    for (i = 0; i < 16; i++) {
+        if (cameraBit & (1 << i)) {
+            CRotM[i] = view->rot;
+            CenterM[i] = view->center;
+            CZoomM[i] = view->zoom;
+            if (mp5CameraViewWork[i].no != -1) {
+                HuPrcKill(mp5CameraViewWork[i].process);
+                mp5CameraViewWork[i].no = -1;
+            }
+        }
+    }
+}
+
+static void omCameraViewSet(OMCAMERAVIEW *view)
+{
+    CRot = view->rot;
+    Center = view->center;
+    CZoom = view->zoom;
+    if (mp5CameraViewWork[0].no != -1) {
+        HuPrcKill(mp5CameraViewWork[0].process);
+        mp5CameraViewWork[0].no = -1;
+    }
+}
+
+static float Mp5CameraViewAngleDiff(float end, float orig)
+{
+    float angle = end - orig;
+    if (HuAbs(angle) > 180.0f) {
+        return (end < orig) ? 360 + angle : angle - 360;
+    }
+    return angle;
+}
+
+static void Mp5CameraViewMoveProc(void)
+{
+    HUPROCESS *process = HuPrcCurrentGet();
+    s16 no = (s16)(intptr_t)process->property;
+    MP5CAMERAVIEWWORK *work = &mp5CameraViewWork[no];
+    u32 i;
+    float angle, weight, zoomOrig;
+    Vec centerOrig, rotOrig, angleDiff;
+    if (work->single) {
+        rotOrig = CRot;
+        centerOrig = Center;
+        zoomOrig = CZoom;
+    } else {
+        rotOrig = CRotM[no];
+        centerOrig = CenterM[no];
+        zoomOrig = CZoomM[no];
+    }
+    angleDiff.x = Mp5CameraViewAngleDiff(work->rotEnd.x, rotOrig.x);
+    angleDiff.y = Mp5CameraViewAngleDiff(work->rotEnd.y, rotOrig.y);
+    angleDiff.z = Mp5CameraViewAngleDiff(work->rotEnd.z, rotOrig.z);
+    for (i = 1; i <= work->maxTime; i++) {
+        float zoomNew;
+        Vec rotNew, centerNew;
+        if (work->moveType == OM_CAMERAMOVE_SIMPLE) {
+            angle = HuSin(90.0f * ((float)i / (float)work->maxTime));
+            weight = HuSin(90.0f * angle);
+        } else if (work->moveType == OM_CAMERAMOVE_COS) {
+            weight = 1 - HuCos(90.0f * ((float)i / (float)work->maxTime));
+        } else if (work->moveType == OM_CAMERAMOVE_LINEAR) {
+            weight = (float)i / (float)work->maxTime;
+        } else if (work->maxTime / 2 > i) {
+            angle = (float)i / (float)(work->maxTime / 2.0);
+            weight = 0.5 * (1 - HuCos(90.0f * angle));
+        } else {
+            angle = (float)(i - (work->maxTime / 2)) / (float)(work->maxTime / 2.0);
+            weight = 0.5 + (0.5 * HuSin(90.0 * HuSin(90.0f * angle)));
+        }
+        zoomNew = zoomOrig + (weight * (work->zoomEnd - zoomOrig));
+        rotNew.x = rotOrig.x + (weight * angleDiff.x);
+        rotNew.y = rotOrig.y + (weight * angleDiff.y);
+        rotNew.z = rotOrig.z + (weight * angleDiff.z);
+        centerNew.x = centerOrig.x + (weight * (work->centerEnd.x - centerOrig.x));
+        centerNew.y = centerOrig.y + (weight * (work->centerEnd.y - centerOrig.y));
+        centerNew.z = centerOrig.z + (weight * (work->centerEnd.z - centerOrig.z));
+        if (work->single) {
+            CZoom = zoomNew;
+            CRot = rotNew;
+            Center = centerNew;
+        } else {
+            CZoomM[no] = zoomNew;
+            CRotM[no] = rotNew;
+            CenterM[no] = centerNew;
+        }
+        HuPrcVSleep();
+    }
+    work->no = -1;
+    HuPrcEnd();
+}
+
+static s16 omCameraViewMoveMulti(u32 camera, OMCAMERAVIEW *view, s32 time, s16 moveType)
+{
+    u32 cameraBit = (camera == OM_CAMERA_SINGLE) ? 1 : camera;
+    s16 i, num = 0;
+    for (i = 0; i < 16; i++) {
+        if (cameraBit & (1 << i)) {
+            MP5CAMERAVIEWWORK *work = &mp5CameraViewWork[i];
+            HUPROCESS *process;
+            if (work->no != -1) {
+                HuPrcKill(work->process);
+            }
+            process = HuPrcChildCreate(Mp5CameraViewMoveProc, 100, 0x1000, 0, HuPrcCurrentGet());
+            process->property = (void *)(intptr_t)i;
+            work->process = process;
+            work->no = i;
+            work->single = camera == OM_CAMERA_SINGLE;
+            work->centerEnd = view->center;
+            work->rotEnd = view->rot;
+            work->zoomEnd = view->zoom;
+            work->maxTime = time;
+            work->moveType = moveType;
+            num++;
+        }
+    }
+    return num;
+}
+
+#define omCameraViewMove(view, time, moveType) omCameraViewMoveMulti(OM_CAMERA_SINGLE, (view), (time), (moveType))
+#define omCameraViewMoveSimpleMulti(camera, view, time) omCameraViewMoveMulti((camera), (view), (time), OM_CAMERAMOVE_SIMPLE)
+#define omCameraViewMoveSimple(view, time) omCameraViewMoveMulti(OM_CAMERA_SINGLE, (view), (time), OM_CAMERAMOVE_SIMPLE)
+
+// TRUE when no move runs on any camera of `cameraBit`
+static BOOL omCameraViewCheck(u32 cameraBit)
+{
+    s16 i;
+    for (i = 0; i < 16; i++) {
+        if ((cameraBit & (1 << i)) && mp5CameraViewWork[i].no != -1) {
+            return FALSE;
+        }
+    }
+    return TRUE;
 }
 
 #include "REL/mp5seqman.h"

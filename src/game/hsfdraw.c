@@ -1031,6 +1031,11 @@ static void SetTevStageTex(HU3DDRAWOBJ *drawObj, HSFMATERIAL *matP) {
                     } else if (texCol[0].a == 2) {
                         GXSetTevSwapModeTable(GX_TEV_SWAP1, GX_CH_RED, GX_CH_ALPHA, GX_CH_ALPHA, GX_CH_ALPHA);
                         GXSetTevSwapModeTable(GX_TEV_SWAP2, GX_CH_BLUE, GX_CH_BLUE, GX_CH_BLUE, GX_CH_ALPHA);
+#ifdef TARGET_PC
+                        // the swap modes set below must be reset by the next material even when this texCol came from an
+                        // earlier draw (no CI_IA8 load set the flag): leaked SWAP1 (R,A,A,A) tints everything after it
+                        TL32F = 1;
+#endif
                         GXSetTevSwapMode(GX_TEVSTAGE0, GX_TEV_SWAP0, GX_TEV_SWAP1);
                         SetKColorRGB(GX_TEVSTAGE0, &firstTev);
                         GXSetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_TEXC, GX_CC_KONST, GX_CC_ZERO);
@@ -1224,6 +1229,11 @@ static void SetTevStageTex(HU3DDRAWOBJ *drawObj, HSFMATERIAL *matP) {
                     } else if (texCol[i].a == 2) {
                         GXSetTevSwapModeTable(GX_TEV_SWAP1, GX_CH_RED, GX_CH_ALPHA, GX_CH_ALPHA, GX_CH_ALPHA);
                         GXSetTevSwapModeTable(GX_TEV_SWAP2, GX_CH_BLUE, GX_CH_BLUE, GX_CH_BLUE, GX_CH_ALPHA);
+#ifdef TARGET_PC
+                        // the swap modes set below must be reset by the next material even when this texCol came from an
+                        // earlier draw (no CI_IA8 load set the flag): leaked SWAP1 (R,A,A,A) tints everything after it
+                        TL32F = 1;
+#endif
                         GXSetTevSwapMode(tevStage, GX_TEV_SWAP0, GX_TEV_SWAP1);
                         SetKColorRGB(tevStage, &firstTev);
                         GXSetTevColorIn(tevStage, GX_CC_ZERO, GX_CC_TEXC, GX_CC_KONST, GX_CC_ZERO);
@@ -1281,6 +1291,11 @@ static void SetTevStageTex(HU3DDRAWOBJ *drawObj, HSFMATERIAL *matP) {
                 } else if (texCol[i].a == 2) {
                     GXSetTevSwapModeTable(GX_TEV_SWAP1, GX_CH_RED, GX_CH_ALPHA, GX_CH_ALPHA, GX_CH_ALPHA);
                     GXSetTevSwapModeTable(GX_TEV_SWAP2, GX_CH_BLUE, GX_CH_BLUE, GX_CH_BLUE, GX_CH_ALPHA);
+#ifdef TARGET_PC
+                    // the swap modes set below must be reset by the next material even when this texCol came from an
+                    // earlier draw (no CI_IA8 load set the flag): leaked SWAP1 (R,A,A,A) tints everything after it
+                    TL32F = 1;
+#endif
                     GXSetTevSwapMode(tevStage, GX_TEV_SWAP0, GX_TEV_SWAP1);
                     SetKColorRGB(tevStage, &firstTev);
                     GXSetTevColorIn(tevStage, GX_CC_ZERO, GX_CC_TEXC, GX_CC_KONST, GX_CC_ZERO);

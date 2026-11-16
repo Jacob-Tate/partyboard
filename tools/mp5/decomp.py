@@ -43,6 +43,8 @@ CTX_HEADERS = """typedef int bool;
 #include "game/mg/timer.h"
 #include "game/mg/seqman.h"
 #include "math.h"
+// game/main.c functions the MP5 headers don't declare
+u8 rand8(void);
 """
 
 

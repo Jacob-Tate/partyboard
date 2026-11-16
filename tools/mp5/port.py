@@ -10,15 +10,17 @@ s = open(path, encoding='utf-8').read()
 s = re.sub(r'typedef void \(\*VoidFunc\)\(void\);\s*extern const VoidFunc _ctors\[\];\s*extern const VoidFunc _dtors\[\];\s*', '', s)
 s = re.sub(r'int _prolog\(void\)\s*\{.*?\n\}\s*\nvoid _epilog\(void\)\s*\{.*?\n\}\n', '', s, flags=re.S)
 
+# an index that may itself hold one level of [] (GwPlayerConf[p->player[i].no])
+IDX = r'\[((?:[^\[\]]|\[[^\[\]]*\])*)\]'
 subs = [
     (r'->mdlId\b', '->model'), (r'->mtnId\b', '->motion'), (r'->objFunc\b', '->func'),
-    (r'GwPlayerConf\[([^]]*)\]\.charNo', r'GWPlayerCfg[\1].character'),
-    (r'GwPlayerConf\[([^]]*)\]\.padNo', r'GWPlayerCfg[\1].pad_idx'),
-    (r'GwPlayerConf\[([^]]*)\]\.dif\b', r'GWPlayerCfg[\1].diff'),
-    (r'GwPlayerConf\[([^]]*)\]\.type\b', r'GWPlayerCfg[\1].iscom'),
-    (r'GwPlayerConf\[([^]]*)\]\.grp\b', r'GWPlayerCfg[\1].group'),
-    (r'GwPlayer\[([^]]*)\]\.mgCoinBonus', r'GWPlayer[\1].coin_win'),
-    (r'GwPlayer\[([^]]*)\]\.mgCoin\b', r'GWPlayer[\1].coin_win'),
+    (r'GwPlayerConf' + IDX + r'\.charNo', r'GWPlayerCfg[\1].character'),
+    (r'GwPlayerConf' + IDX + r'\.padNo', r'GWPlayerCfg[\1].pad_idx'),
+    (r'GwPlayerConf' + IDX + r'\.dif\b', r'GWPlayerCfg[\1].diff'),
+    (r'GwPlayerConf' + IDX + r'\.type\b', r'GWPlayerCfg[\1].iscom'),
+    (r'GwPlayerConf' + IDX + r'\.grp\b', r'GWPlayerCfg[\1].group'),
+    (r'GwPlayer' + IDX + r'\.mgCoinBonus', r'GWPlayer[\1].coin_win'),
+    (r'GwPlayer' + IDX + r'\.mgCoin\b', r'GWPlayer[\1].coin_win'),
     (r'_CheckFlag\(FLAG_MG_PRACTICE\)', '_CheckFlag(MP5_PRACTICE_FLAG)'),
     (r'_CheckFlag\(FLAG_INST_DECA\)', '0'),
     # m2c drafts use raw numbers
@@ -27,7 +29,8 @@ subs = [
     (r'\bGameMesCreate\(2, 0(?:, [^)]*)?\)', 'MGSeqStartCreate()'),
     (r'\bGameMesCreate\(2, 1(?:, [^)]*)?\)', 'MGSeqFinishCreate()'),
     (r'\bGameMesCreate\(2, 2(?:, [^)]*)?\)', 'MGSeqDrawCreate()'),
-    (r'\bGameMesCreate\(4, 3, ([^,]+), ([^,]+), ([^,]+), ([^,)]+)[^)]*\)', r'MGSeqWinCreate(\1, \2, \3, \4)'),
+    # (m2c may append leftover registers: GameMesCreate(4, 3, c, -1, -1, -1, (bitwise f32) x))
+    (r'\bGameMesCreate\(4, 3, ([^,]+), ([^,]+), ([^,]+), ([^,)]+)(?:, [^;]*)?\);', r'MGSeqWinCreate(\1, \2, \3, \4);'),
     (r'(HuDataSelHeapReadNum\([^,]+), 0x10000000U?, HEAP_MODEL\)', r'\1, MEMORY_DEFAULT_NUM, HEAP_DATA)'),
     (r'HuMemDirectMallocNum\(HEAP_HEAP, ([^,]+), 0x10000000U?\)', r'HuMemDirectMallocNum(HEAP_SYSTEM, \1, MEMORY_DEFAULT_NUM)'),
     (r'\bPoint3d\b', 'Vec'),
@@ -54,6 +57,11 @@ subs = [
     # MP5 code calls frandmod (u32) with a float in hand and no prototype, so it gets whatever r3 held; the
     # intent (a random start frame) is the float converted
     (r'\bfrandmod\(\(bitwise u32\) ', 'frandmod((u32) '),
+    # memset has 3 arguments; m2c (no prototype in MP5's headers) appends leftover registers
+    (r'\bmemset\(([^,;]+), ([^,;]+), ([^,;]+), [^;]+\);', r'memset(\1, \2, \3);'),
+    # MgSeq calls that take no arguments: m2c passes whatever the registers held (MgSeqModeNext(&x))
+    (r'\b(MgSeqModeNext|MgSeqKill|MgSeqModeGet|MgSeqModeChangeOff|MgSeqModeChangeOn|MgSeqDrawSet|MgSeqStatGet'
+     r'|MgSeqFrameNoGet|MgSeqTimerValueGet|MgSeqGameMesIdGet)\([^()]+\)', r'\1()'),
 ]
 for a, b in subs:
     s = re.sub(a, b, s)
