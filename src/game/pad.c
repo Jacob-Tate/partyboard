@@ -3,6 +3,7 @@
 #include "game/pad.h"
 #ifdef TARGET_PC
 #include "port/inputsync.h"
+#define PADControlMotor partyboard_input_control_motor
 #endif
 
 #ifndef __MWERKS__

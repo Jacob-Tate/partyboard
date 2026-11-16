@@ -18,6 +18,8 @@ int partyboard_input_open(const char *recordPath, const char *replayPath);
 u32 partyboard_input_pad_read(PADStatus *status);
 // True when input must not come from local-only sources (soft reset combo, etc.).
 int partyboard_input_is_synced(void);
+// PADControlMotor for the game: online, a seat's rumble goes to the local controller that plays it.
+void partyboard_input_control_motor(s32 chan, u32 command);
 void partyboard_input_close(void);
 
 #ifdef __cplusplus

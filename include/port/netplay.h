@@ -131,6 +131,8 @@ void partyboard_netplay_wait_for_parent(int argc, char *argv[]);
 // The party is over (ceremony done): the shutdown restarts this program into the menu, except in test runs.
 void partyboard_netplay_game_over(void);
 void partyboard_netplay_shutdown(void);
+// The local controller slot (0 = controller 1) that plays seat `port` on this machine, or -1.
+int partyboard_netplay_local_slot(int port);
 
 #ifdef __cplusplus
 }

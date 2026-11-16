@@ -93,7 +93,11 @@ u32 partyboard_input_pad_read(PADStatus *status)
 {
     u32 result;
     if (partyboard_netplay_active()) {
-        return partyboard_netplay_pad_read(status);
+        // The result is which controllers can rumble; minigames show "!!" instead for the ones that
+        // can't. It must be the same on every machine, so say all of them can (they do: vibration goes
+        // to each player's own controller, see partyboard_input_control_motor).
+        partyboard_netplay_pad_read(status);
+        return PAD_CHAN0_BIT | PAD_CHAN1_BIT | PAD_CHAN2_BIT | PAD_CHAN3_BIT;
     }
     if (sMode == INPUT_REPLAY) {
         if (!sReplayEnded && fread(&result, sizeof(result), 1, sFile) == 1
@@ -118,6 +122,19 @@ u32 partyboard_input_pad_read(PADStatus *status)
         sReads++;
     }
     return result;
+}
+
+void partyboard_input_control_motor(s32 chan, u32 command)
+{
+    if (partyboard_netplay_active()) {
+        // chan is a seat; only the seats played on this machine rumble, on their local controller.
+        const int slot = partyboard_netplay_local_slot(chan);
+        if (slot >= 0) {
+            PADControlMotor(slot, command);
+        }
+        return;
+    }
+    PADControlMotor(chan, command);
 }
 
 int partyboard_input_is_synced(void)

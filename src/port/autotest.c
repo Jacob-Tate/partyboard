@@ -349,6 +349,11 @@ static void setup_continue(void)
 void partyboard_autotest_setup_party(void)
 {
     s32 i;
+    if (partyboard_netplay_active()) {
+        // Minigames pick rumble or "!!" signals from this option; it comes from each machine's memory
+        // card, so make it the same everywhere (the pause menu can still change it, in sync).
+        GWRumbleSet(1);
+    }
     if (sContinueSize == (int)(sizeof(SystemState) + 4 * sizeof(PlayerState))) {
         setup_continue();
         return;

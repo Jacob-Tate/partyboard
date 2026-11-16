@@ -1775,6 +1775,20 @@ void partyboard_netplay_shutdown(void)
     }
 }
 
+int partyboard_netplay_local_slot(int port)
+{
+    int slot = 0;
+    int p;
+    if (port < 0 || port >= PB_NET_MAX_PLAYERS || !(sOwnedMask & (1 << port))) {
+        return -1;
+    }
+    // Same order as send_input: the first seat this client owns is controller 1, the second controller 2.
+    for (p = 0; p < port; p++) {
+        slot += (sOwnedMask >> p) & 1;
+    }
+    return slot;
+}
+
 void partyboard_netplay_game_over(void)
 {
     int i;
