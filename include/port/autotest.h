@@ -39,9 +39,10 @@ typedef struct PartyBoardAutotest {
     unsigned int maxFrames;
     unsigned int dumpFrame;
     const char *isoPath;
-    int menu; // --menu: always open the Party Board menu (the restart after an online party)
     const char *checksumLogPath;
     int charsSet; // --chars was given
+    int menu; // --menu: always open the Party Board menu (the restart after an online party)
+    int minigame; // --minigame <401-4xx>: straight into that minigame instead of a board (0: off)
 } PartyBoardAutotest;
 
 // Parses argv; unknown arguments are ignored. Returns 0 on a malformed option.
@@ -58,6 +59,9 @@ unsigned int partyboard_autotest_frame_seed(void);
 // Gives up the CPU briefly while spin-waiting on a worker thread.
 void partyboard_autotest_yield(void);
 void partyboard_autotest_setup_party(void);
+// --minigame: sets up the players and teams for that minigame (as Mini-Game mode does) and returns 1;
+// returns 0 without it (or when it names no minigame), and the caller starts a board instead.
+int partyboard_autotest_setup_minigame(void);
 // Applies netplay game settings; humanMask has a bit per human-controlled port.
 // Online games: team battle (P1+P2 against P3+P4) and the end-of-party bonus stars, for the next new party.
 void partyboard_autotest_set_party_options(int teams, int bonusStars);

@@ -167,6 +167,15 @@ void ObjectSetup(void)
          static const s32 boardOvlTbl[6] = { DLL_w01dll, DLL_w02dll, DLL_w03dll, DLL_w04dll, DLL_w05dll, DLL_w06dll };
          if (omovlevtno == 0 || partyboard_autotest_next_game()) {
              BootInitForSkippedSequence();
+             if (partyboard_autotest_setup_minigame()) {
+                 // --minigame: its instructions, then the minigame, then back here as event 1.
+                 omOvlHisChg(0, DLL_bootdll, 1, 0);
+                 omOvlCallEx(DLL_instdll, 1, 0, 0);
+                 HuPrcEnd();
+                 do {
+                     HuPrcVSleep();
+                 } while (1);
+             }
              partyboard_autotest_setup_party();
              if (partyboard_netplay_active()) {
                  // As in party mode (mentDll): the board returns into the end-of-party ceremony (bonus

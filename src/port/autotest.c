@@ -4,6 +4,7 @@
 #include "game/chrman.h"
 #include "game/gamework_data.h"
 #include "game/object.h"
+#include "game/objsub.h"
 #include "game/saveload.h"
 #include "game/board/mg_setup.h"
 #include "port/byteswap.h"
@@ -114,6 +115,10 @@ int partyboard_autotest_parse(int argc, char *argv[])
 
         if (strcmp(arg, "--quickstart") == 0) {
             sAutotest.quickstart = 1;
+        } else if (strcmp(arg, "--minigame") == 0 && next) {
+            sAutotest.minigame = atoi(next);
+            sAutotest.quickstart = 1;
+            i++;
         } else if (strcmp(arg, "--menu") == 0) {
             sAutotest.menu = 1;
         } else if (strcmp(arg, "--fast") == 0) {
@@ -386,6 +391,51 @@ void partyboard_autotest_setup_party(void)
     printf("[autotest] game %d start: board %d, %d turns\n", sAutotest.gamesFinished + 1, sAutotest.board,
         sAutotest.turns);
     fflush(stdout);
+}
+
+int partyboard_autotest_setup_minigame(void)
+{
+    s32 i;
+    s32 count = 0;
+    s32 index;
+    if (sAutotest.minigame <= 0 || partyboard_netplay_active()) {
+        return 0;
+    }
+    while (mgInfoTbl[count].ovl != 0xFFFF) {
+        count++;
+    }
+    index = sAutotest.minigame - 401;
+    if (index < 0 || index >= count) {
+        printf("[autotest] --minigame %d: no such minigame (401-%d); starting a board\n", sAutotest.minigame, 400 + count);
+        fflush(stdout);
+        return 0;
+    }
+    for (i = 0; i < 4; i++) {
+        GWPlayerCfg[i].character = sAutotest.chars[i];
+        GWPlayerCfg[i].pad_idx = i;
+        GWPlayerCfg[i].diff = sAutotest.cpuLevel;
+        GWPlayerCfg[i].iscom = (sAutotest.humanMask & (1 << i)) ? 0 : 1;
+        // Teams as Mini-Game mode makes them: 1 vs 3 puts P1 alone, 2 vs 2 pairs P1+P2 against P3+P4.
+        switch (mgInfoTbl[index].type) {
+            case 1:
+                GWPlayerCfg[i].group = i == 0 ? 0 : 1;
+                break;
+            case 2:
+                GWPlayerCfg[i].group = i / 2;
+                break;
+            default:
+                GWPlayerCfg[i].group = i;
+                break;
+        }
+        CharMotionInit(GWPlayerCfg[i].character);
+    }
+    GWSystem.mg_next = (u16)index;
+    GWMGTypeSet(-1);
+    GWMGShowComSet(1);
+    SLSaveFlagSet(0);
+    printf("[autotest] minigame %d (type %d)\n", sAutotest.minigame, (int)mgInfoTbl[index].type);
+    fflush(stdout);
+    return 1;
 }
 
 int partyboard_autotest_next_game(void)
