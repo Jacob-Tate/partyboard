@@ -39,6 +39,34 @@ s = s.replace('*lbl_1_bss_5D2', 'lbl_1_bss_5D2[0]')
 # per-character tables are in MP5 character order (DK borrows Wario's row)
 rep('lbl_1_bss_3F0.unk48[temp_r31]->unk6', 'lbl_1_bss_3F0.unk48[temp_r31][3]')
 s = re.sub(r'lbl_1_data_(0|184|288|424)\[((?:[^\[\]]|\[[^\[\]]*\])*\.unk2)\]', r'lbl_1_data_\1[Mp5CharNo(\2)]', s)
+# Motion time drives the game (the pass completes at time 50, the blast at 110...). DK's MP4 stand-in motions
+# have other lengths than MP5's (the carrying pose is 32 frames, MP5's 119), so for DK the motion's time and
+# speed are stretched to MP5's length per state (59, 119, 9; state 3 is the win, state 4 a 19-29 frame loop).
+rep('void fn_1_6EA0(omObjData *obj) {', '''static const f32 sMp5MotLen[5] = { 59.0f, 119.0f, 9.0f, 0.0f, 24.0f };
+static f32 sDkMotScale[2] = { 1.0f, 1.0f }; // MP4 motion length / MP5 motion length
+
+void fn_1_6EA0(omObjData *obj) {''')
+rep('''            temp_r31->unk14 = Hu3DMotionMaxTimeGet(lbl_1_bss_5F8->unk3C[temp_r0].unk0);
+''', '''            temp_r31->unk14 = Hu3DMotionMaxTimeGet(lbl_1_bss_5F8->unk3C[temp_r0].unk0);
+            sDkMotScale[var_r29] = 1.0f;
+            if (!Mp5CharHasMotions(lbl_1_bss_5F8->unk4[var_r29].unk2) && sMp5MotLen[temp_r31->unk0] > 0.0f) {
+                sDkMotScale[var_r29] = temp_r31->unk14 / sMp5MotLen[temp_r31->unk0];
+                temp_r31->unk14 = sMp5MotLen[temp_r31->unk0];
+                temp_r31->unk8 = temp_r31->unk4 + 1.0f; // re-apply the (scaled) speed below
+            }
+''')
+rep('Hu3DMotionSpeedSet(lbl_1_bss_5F8->unk3C[temp_r0].unk0, temp_r31->unk4);',
+    'Hu3DMotionSpeedSet(lbl_1_bss_5F8->unk3C[temp_r0].unk0, temp_r31->unk4 * sDkMotScale[var_r29]);')
+rep('Hu3DMotionTimeSet(lbl_1_bss_5F8->unk3C[temp_r0].unk0, temp_r31->unkC);',
+    'Hu3DMotionTimeSet(lbl_1_bss_5F8->unk3C[temp_r0].unk0, temp_r31->unkC * sDkMotScale[var_r29]);')
+# the game compares the time with == (49, 110...): snap the stretched time to the integer it stands for
+rep('temp_r31->unkC = Hu3DMotionTimeGet(lbl_1_bss_5F8->unk3C[temp_r0].unk0);', '''temp_r31->unkC = Hu3DMotionTimeGet(lbl_1_bss_5F8->unk3C[temp_r0].unk0) / sDkMotScale[var_r29];
+        if (sDkMotScale[var_r29] != 1.0f) {
+            f32 whole = (f32)(s32)(temp_r31->unkC + 0.5f);
+            if (temp_r31->unkC - whole < 0.01f && whole - temp_r31->unkC < 0.01f) {
+                temp_r31->unkC = whole;
+            }
+        }''')
 open(p, 'w', encoding='utf-8', newline='\n').write(s)
 PY
 mkdir -p src/REL/m548Dll

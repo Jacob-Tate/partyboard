@@ -316,6 +316,8 @@ static const struct {
     { TRUE, 176, 59 }, // waving the fan pole (m554 Wind Wavers, loops): a rhythmic forward arm pump
     { FALSE, 47, 23 }, // joyful hands-clasped win (m554): MP4's win
     { FALSE, 43, 19 }, // flung away by the wind (m554 loser, loops): knocked back
+    { FALSE, 35, 89 }, // carrying the Bowser bomb (m548 Head Waiter, loops): standing, both arms held out in front
+    { FALSE, 34, 20 }, // blown up by the bomb (m548): knocked back
 };
 
 static s16 Mp5CharMotionCreateData(s16 charNo, u32 dataNum, s32 mp4MotNo)

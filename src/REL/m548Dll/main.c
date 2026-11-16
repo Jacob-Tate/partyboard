@@ -1776,6 +1776,9 @@ loop_8:
     }
 }
 
+static const f32 sMp5MotLen[5] = { 59.0f, 119.0f, 9.0f, 0.0f, 24.0f };
+static f32 sDkMotScale[2] = { 1.0f, 1.0f }; // MP4 motion length / MP5 motion length
+
 void fn_1_6EA0(omObjData *obj) {
     M548Anim *temp_r31;
     s16 temp_r0;
@@ -1790,9 +1793,15 @@ loop_12:
             Hu3DMotionSet(lbl_1_bss_5F8->unk3C[temp_r0].unk0, lbl_1_bss_5F8->unk48[var_r29][temp_r31->unk0]);
             temp_r31->unk2 = temp_r31->unk0;
             temp_r31->unk14 = Hu3DMotionMaxTimeGet(lbl_1_bss_5F8->unk3C[temp_r0].unk0);
+            sDkMotScale[var_r29] = 1.0f;
+            if (!Mp5CharHasMotions(lbl_1_bss_5F8->unk4[var_r29].unk2) && sMp5MotLen[temp_r31->unk0] > 0.0f) {
+                sDkMotScale[var_r29] = temp_r31->unk14 / sMp5MotLen[temp_r31->unk0];
+                temp_r31->unk14 = sMp5MotLen[temp_r31->unk0];
+                temp_r31->unk8 = temp_r31->unk4 + 1.0f; // re-apply the (scaled) speed below
+            }
         }
         if (temp_r31->unk4 != temp_r31->unk8) {
-            Hu3DMotionSpeedSet(lbl_1_bss_5F8->unk3C[temp_r0].unk0, temp_r31->unk4);
+            Hu3DMotionSpeedSet(lbl_1_bss_5F8->unk3C[temp_r0].unk0, temp_r31->unk4 * sDkMotScale[var_r29]);
             temp_r31->unk8 = temp_r31->unk4;
         }
         if ((u32) temp_r31->unk18 != (u32) temp_r31->unk1C) {
@@ -1806,9 +1815,15 @@ loop_12:
             temp_r31->unk1C = 0;
         }
         if (temp_r31->unkC != temp_r31->unk10) {
-            Hu3DMotionTimeSet(lbl_1_bss_5F8->unk3C[temp_r0].unk0, temp_r31->unkC);
+            Hu3DMotionTimeSet(lbl_1_bss_5F8->unk3C[temp_r0].unk0, temp_r31->unkC * sDkMotScale[var_r29]);
         }
-        temp_r31->unkC = Hu3DMotionTimeGet(lbl_1_bss_5F8->unk3C[temp_r0].unk0);
+        temp_r31->unkC = Hu3DMotionTimeGet(lbl_1_bss_5F8->unk3C[temp_r0].unk0) / sDkMotScale[var_r29];
+        if (sDkMotScale[var_r29] != 1.0f) {
+            f32 whole = (f32)(s32)(temp_r31->unkC + 0.5f);
+            if (temp_r31->unkC - whole < 0.01f && whole - temp_r31->unkC < 0.01f) {
+                temp_r31->unkC = whole;
+            }
+        }
         temp_r31->unk10 = temp_r31->unkC;
         var_r29 += 1;
         goto loop_12;
