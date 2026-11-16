@@ -1278,6 +1278,46 @@ static void show_waiting(int waitedMs)
     SDL_free(windows);
 }
 
+// The window title shows the turn ("PartyBoard ... - Turn 7 of 20"), so everyone can see how far the party is.
+// Set only when it changes; show_waiting borrows the title while a frame waits and puts this one back.
+static void show_turn(void)
+{
+    static char base[200];
+    static char shown[256];
+    static int final = 0; // the ceremony switches overlays between its screens: stay on "Final results"
+    char title[256];
+    SDL_Window **windows;
+    int count = 0;
+    int turn = GWSystem.turn;
+    windows = SDL_GetWindows(&count);
+    if (windows == NULL || count < 1) {
+        SDL_free(windows);
+        return;
+    }
+    if (!base[0]) {
+        snprintf(base, sizeof(base), "%s", SDL_GetWindowTitle(windows[0]));
+    }
+    if (omcurovl == DLL_mstory3dll || turn > GWSystem.max_turn) {
+        final = 1;
+    } else if (omcurovl == DLL_bootdll) {
+        final = 0;
+    }
+    if (omcurovl == DLL_bootdll || GWSystem.max_turn == 0) {
+        snprintf(title, sizeof(title), "%s", base);
+    } else if (final) {
+        snprintf(title, sizeof(title), "%s - Final results", base);
+    } else {
+        snprintf(title, sizeof(title), "%s - Turn %d of %d", base, turn, GWSystem.max_turn);
+    }
+    if (strcmp(title, shown) != 0) {
+        snprintf(shown, sizeof(shown), "%s", title);
+        SDL_SetWindowTitle(windows[0], title);
+        printf("[netplay] title: %s\n", title);
+        fflush(stdout);
+    }
+    SDL_free(windows);
+}
+
 u32 partyboard_netplay_pad_read(PADStatus *status)
 {
     PADStatus local[PB_NET_MAX_PLAYERS];
@@ -1294,6 +1334,7 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
         PartyBoard_IsRunning = false;
         return 0;
     }
+    show_turn();
     if (sEnded) {
         for (port = 0; port < PB_NET_MAX_PLAYERS; port++) {
             memset(&status[port], 0, sizeof(PADStatus));
