@@ -2004,7 +2004,30 @@ void Hu3DShadowExec(void) {
         GXSetViewport(0.0f, 0.0f, Hu3DShadowData.size, Hu3DShadowData.size, 0.0f, 1.0f);
         test = Hu3DShadowData.size * Hu3DShadowData.size;
     }
+#ifdef TARGET_PC
+    {
+        /* Some minigames (m441 Butterfly Blitz) pass the light's own direction as the shadow camera's up vector, so
+           the look-at has no sideways axis and its matrix is all NaN: nothing reached the shadow map and no shadows
+           showed (the GameCube's GPU copes). Any other up only turns the map about the light axis. */
+        Vec up = Hu3DShadowData.camUp;
+        Vec look, side;
+        VECSubtract(&Hu3DShadowData.camPos, &Hu3DShadowData.camTarget, &look);
+        VECCrossProduct(&up, &look, &side);
+        if (VECSquareMag(&side) <= 1e-6f * VECSquareMag(&up) * VECSquareMag(&look)) {
+            up.x = 0.0f;
+            up.y = 0.0f;
+            up.z = -1.0f;
+            VECCrossProduct(&up, &look, &side);
+            if (VECSquareMag(&side) <= 1e-6f * VECSquareMag(&look)) {
+                up.y = 1.0f;
+                up.z = 0.0f;
+            }
+        }
+        C_MTXLookAt(Hu3DCameraMtx, &Hu3DShadowData.camPos, &up, &Hu3DShadowData.camTarget);
+    }
+#else
     C_MTXLookAt(Hu3DCameraMtx, &Hu3DShadowData.camPos, &Hu3DShadowData.camUp, &Hu3DShadowData.camTarget);
+#endif
     MTXCopy(Hu3DCameraMtx, Hu3DShadowData.lookAtMtx);
     var_r31 = Hu3DData;
     shadowModelDrawF = 1;
