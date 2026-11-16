@@ -390,6 +390,7 @@ int partyboard_autotest_next_game(void)
         fprintf(sChecksumLog, "# game %d finished at frame %u\n", sAutotest.gamesFinished, GlobalCounter);
     }
     if (!sAutotest.loop) {
+        partyboard_netplay_game_over();
         PartyBoard_IsRunning = false;
         return 0;
     }

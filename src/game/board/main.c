@@ -410,6 +410,10 @@ static void MainFunc(void)
     turn_cont = 0;
     BoardPauseDisableSet(1);
     if(_CheckFlag(FLAG_ID_MAKE(0, 10))) {
+#ifdef TARGET_PC
+        // The last turn's minigame is over: the party ends here (the caller shows the ceremony).
+        partyboard_online_save_party_over();
+#endif
         _ClearFlag(FLAG_ID_MAKE(0, 10));
         _SetFlag(FLAG_ID_MAKE(1, 16));
         BoardKill();

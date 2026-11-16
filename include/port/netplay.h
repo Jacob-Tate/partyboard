@@ -128,6 +128,8 @@ void partyboard_netplay_turn_starts(int player);
 // Rejoining after a reload: a restarted game first waits for the old process (--wait-pid) to exit, so the two
 // never share the log file or the window. Call first thing in main.
 void partyboard_netplay_wait_for_parent(int argc, char *argv[]);
+// The party is over (ceremony done): the shutdown restarts this program into the menu, except in test runs.
+void partyboard_netplay_game_over(void);
 void partyboard_netplay_shutdown(void);
 
 #ifdef __cplusplus

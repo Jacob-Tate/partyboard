@@ -198,6 +198,22 @@ void omOvlHisChg(s32 level, OMOVL overlay, s32 event, s32 stat)
     history->stat = stat;
 }
 
+#ifdef TARGET_PC
+// Adds an entry to the overlay history without starting it, so the next omOvlCallEx'd overlay
+// returns into it (party mode gets the same effect by rewriting its own entry with omOvlHisChg).
+void omOvlHisPush(OMOVL overlay, s32 event, s32 stat)
+{
+    if (omovlhisidx + 1 >= OM_OVL_HIS_MAX) {
+        OSReport("objman>OVL Call over error\n");
+        return;
+    }
+    omovlhisidx++;
+    omovlhis[omovlhisidx].overlay = overlay;
+    omovlhis[omovlhisidx].event = event;
+    omovlhis[omovlhisidx].stat = stat;
+}
+
+#endif
 omOvlHisData *omOvlHisGet(s32 level)
 {
     if (omovlhisidx - level < 0 || omovlhisidx - level >= OM_OVL_HIS_MAX) {

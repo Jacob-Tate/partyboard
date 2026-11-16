@@ -86,6 +86,9 @@ void omOvlReturnEx(s16 level, s16 arg2);
 void omOvlKill(s16 arg);
 void omOvlHisChg(s32 level, OMOVL overlay, s32 event, s32 stat);
 omOvlHisData *omOvlHisGet(s32 level);
+#ifdef TARGET_PC
+void omOvlHisPush(OMOVL overlay, s32 event, s32 stat);
+#endif
 Process *omInitObjMan(s16 max_objs, s32 prio);
 void omDestroyObjMan(void);
 omObjData *omAddObjEx(Process *objman_process, s16 prio, u16 mdlcnt, u16 mtncnt, s16 group, omObjFunc func);

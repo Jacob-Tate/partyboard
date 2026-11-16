@@ -29,6 +29,7 @@
 #include "port/port_version.h"
 #include "port/settings.h"
 #include "port/autotest.h"
+#include "port/netplay.h"
 #endif
 
 #define HU_PAD_BTN_ALL (HuPadBtn[0] | HuPadBtn[1] | HuPadBtn[2] | HuPadBtn[3])
@@ -167,6 +168,12 @@ void ObjectSetup(void)
          if (omovlevtno == 0 || partyboard_autotest_next_game()) {
              BootInitForSkippedSequence();
              partyboard_autotest_setup_party();
+             if (partyboard_netplay_active()) {
+                 // As in party mode (mentDll): the board returns into the end-of-party ceremony (bonus
+                 // stars, winner), which then returns here as event 1, "a board just finished".
+                 omOvlHisChg(0, DLL_bootdll, 1, 0);
+                 omOvlHisPush(DLL_mstory3dll, 0, 0);
+             }
              omOvlCallEx(boardOvlTbl[GWSystem.board], 1, 0, 0);
          }
          HuPrcEnd();

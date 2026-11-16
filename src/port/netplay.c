@@ -75,6 +75,8 @@ static void begin_restart(const char *why);
 // The command line, to restart with (without the netplay options, which the restart sets itself).
 static int sArgc = 0;
 static char **sArgv = NULL;
+// The party is over: restart into the menu instead of just closing (see partyboard_netplay_game_over).
+static int sBackToMenu = 0;
 
 static void parse_server(const char *server);
 
@@ -1341,7 +1343,12 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
         }
         if (tapEvery > 0) {
             memset(local, 0, sizeof(PADStatus) * PB_NET_MAX_PLAYERS);
-            if ((int)(sFrame % (u32)tapEvery) < 5) {
+            if (omcurovl == DLL_mstory3dll && omovlevtno == 1) {
+                // End-of-party results: A opens the details and B goes back, START closes them.
+                if ((int)(sFrame % (u32)tapEvery) < 5) {
+                    local[0].button = PAD_BUTTON_START;
+                }
+            } else if ((int)(sFrame % (u32)tapEvery) < 5) {
                 local[0].button = PAD_BUTTON_A;
                 local[0].analogA = 0xFF;
             } else if (omcurovl == DLL_instdll && (int)(sFrame % (u32)tapEvery) >= tapEvery / 2 &&
@@ -1565,7 +1572,8 @@ static void append_arg(char *cmd, size_t cap, const char *arg)
 
 // Starts this program again to rejoin the room: the original command line without its netplay options, then
 // --server/--join/--name for the same room. The new process waits for this one to exit (--wait-pid).
-static void relaunch(void)
+// toMenu: just the original command line (minus netplay options and --quickstart), which opens the menu.
+static void relaunch(int toMenu)
 {
     static const char *const withValue[] = { "--server", "--join", "--players", "--delay", "--name", "--char", "--port",
         "--continue", "--save-into", "--wait-pid", "--reloaded" };
@@ -1589,6 +1597,9 @@ static void relaunch(void)
                 skip = 1;
             }
         }
+        if (toMenu && strcmp(arg, "--quickstart") == 0) {
+            skip = 1;
+        }
         if (skip) {
             i += skip - 1;
             continue;
@@ -1611,6 +1622,9 @@ static void relaunch(void)
 #endif
     args[n++] = "--wait-pid";
     args[n++] = pid;
+    if (toMenu) {
+        goto start;
+    }
     args[n++] = "--reloaded";
     args[n++] = sRestartWhy;
     args[n++] = "--server";
@@ -1623,6 +1637,7 @@ static void relaunch(void)
         args[n++] = "--save-into";
         args[n++] = sRelaunchSave;
     }
+start:
     args[n] = NULL;
 #ifdef _WIN32
     {
@@ -1655,7 +1670,11 @@ static void relaunch(void)
         _exit(127);
     }
 #endif
-    printf("[netplay] restarted to rejoin room %s\n", sRelaunchCode);
+    if (toMenu) {
+        printf("[netplay] party over: restarted into the menu\n");
+    } else {
+        printf("[netplay] restarted to rejoin room %s\n", sRelaunchCode);
+    }
     fflush(stdout);
 }
 
@@ -1707,6 +1726,33 @@ void partyboard_netplay_shutdown(void)
     sActive = 0;
     if (sReloading) {
         sReloading = 0;
-        relaunch();
+        relaunch(0);
+    } else if (sBackToMenu) {
+        sBackToMenu = 0;
+        relaunch(1);
     }
+}
+
+void partyboard_netplay_game_over(void)
+{
+    int i;
+    if (!sActive) {
+        return;
+    }
+    // Unattended test runs (tools/autotest.py, the netplay test scripts) just end, unless
+    // PB_NETPLAY_TEST_MENU is set (tests this restart).
+    if (getenv("PB_NETPLAY_TEST_MENU") != NULL) {
+        sBackToMenu = 1;
+        return;
+    }
+    if (getenv("PB_NETPLAY_TEST_TAP") != NULL) {
+        return;
+    }
+    for (i = 1; i < sArgc; i++) {
+        if (strcmp(sArgv[i], "--checksum-log") == 0 || strcmp(sArgv[i], "--max-frames") == 0 ||
+            strcmp(sArgv[i], "--loop") == 0) {
+            return;
+        }
+    }
+    sBackToMenu = 1;
 }
