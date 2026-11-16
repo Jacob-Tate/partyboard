@@ -3,7 +3,8 @@
 	url = https://github.com/AxioDL/musyx
 [submodule "extern/aurora"]
 	path = extern/aurora
-	url = https://github.com/encounter/aurora.git
+	url = https://github.com/Jacob-Tate/aurora.git
+	branch = partyboard
 [submodule "extern/libco"]
 	path = extern/libco
 	url = https://github.com/higan-emu/libco.git
