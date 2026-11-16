@@ -204,6 +204,12 @@ typedef struct HsfAttribute_s {
     GXTexObj tex8000_obj;
     GXTlutObj tlut_obj;
     GXTlutObj tlut8000_obj; // used in dataFmt 11
+    const void *tlut_pal; // the palette tlut_obj was made from (an animated material swaps bitmaps)
+    const void *tlut8000_pal;
+    u8 tex_fmt; // the bitmap format, depth and size tex_obj was made for (an animated material can swap to another)
+    u8 tex_pix;
+    s16 tex_w;
+    s16 tex_h;
 #endif
 } HSFATTRIBUTE;
 

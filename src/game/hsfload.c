@@ -929,6 +929,12 @@ static void AttributeLoad(void)
             new_attr->tex8000_initialized = FALSE;
             new_attr->tlut_initialized = FALSE;
             new_attr->tlut8000_initialized = FALSE;
+            new_attr->tlut_pal = NULL;
+            new_attr->tlut8000_pal = NULL;
+            new_attr->tex_fmt = 0;
+            new_attr->tex_pix = 0;
+            new_attr->tex_w = 0;
+            new_attr->tex_h = 0;
             memset(&new_attr->tex_obj, 0, sizeof(new_attr->tex_obj));
             memset(&new_attr->tex8000_obj, 0, sizeof(new_attr->tex8000_obj));
             memset(&new_attr->tlut_obj, 0, sizeof(new_attr->tlut_obj));

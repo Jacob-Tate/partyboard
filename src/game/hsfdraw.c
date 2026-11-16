@@ -1769,6 +1769,19 @@ static void LoadTexture(HU3DMODEL *modelP, HSFBITMAP *bmpPtr, HSFATTRIBUTE *attr
         OSReport("Error: No Texture\n");
         return;
     }
+    if (attrP->tex_initialized && (attrP->tex_fmt != bmpPtr->dataFmt || attrP->tex_pix != bmpPtr->pixSize
+                                   || attrP->tex_w != bmpPtr->sizeX || attrP->tex_h != bmpPtr->sizeY)) {
+        // An animated material swapped to a bitmap of another format or size (m402's burst goes from a C4 frame
+        // to RGB5A3 ones): only the data pointer is refreshed below, so build the texture object again.
+        GXDestroyTexObj(&attrP->tex_obj);
+        attrP->tex_initialized = FALSE;
+    }
+    if (!attrP->tex_initialized) {
+        attrP->tex_fmt = bmpPtr->dataFmt;
+        attrP->tex_pix = bmpPtr->pixSize;
+        attrP->tex_w = bmpPtr->sizeX;
+        attrP->tex_h = bmpPtr->sizeY;
+    }
     var_r27 = bmpPtr->sizeX;
     var_r26 = bmpPtr->sizeY;
     var_r22 = (attrP->wrapS == 1) ? GX_REPEAT : GX_CLAMP;
@@ -1792,7 +1805,11 @@ static void LoadTexture(HU3DMODEL *modelP, HSFBITMAP *bmpPtr, HSFATTRIBUTE *attr
             break;
         case 9:
             fmt = bmpPtr->pixSize < 8 ? GX_TF_C4 : GX_TF_C8;
-            if (!attrP->tlut_initialized) {
+            if (!attrP->tlut_initialized || attrP->tlut_pal != bmpPtr->palData) {
+                if (attrP->tlut_initialized) {
+                    GXDestroyTlutObj(tlut_obj);
+                }
+                attrP->tlut_pal = bmpPtr->palData;
                 GXInitTlutObj(tlut_obj, bmpPtr->palData, GX_TL_RGB565, bmpPtr->palSize);
                 attrP->tlut_initialized = TRUE;
             }
@@ -1803,7 +1820,11 @@ static void LoadTexture(HU3DMODEL *modelP, HSFBITMAP *bmpPtr, HSFATTRIBUTE *attr
             break;
         case 10:
             fmt = bmpPtr->pixSize < 8 ? GX_TF_C4 : GX_TF_C8;
-            if (!attrP->tlut_initialized) {
+            if (!attrP->tlut_initialized || attrP->tlut_pal != bmpPtr->palData) {
+                if (attrP->tlut_initialized) {
+                    GXDestroyTlutObj(tlut_obj);
+                }
+                attrP->tlut_pal = bmpPtr->palData;
                 GXInitTlutObj(tlut_obj, bmpPtr->palData, GX_TL_RGB5A3, bmpPtr->palSize);
                 attrP->tlut_initialized = TRUE;
             }
@@ -1862,7 +1883,11 @@ static void LoadTexture(HU3DMODEL *modelP, HSFBITMAP *bmpPtr, HSFATTRIBUTE *attr
             if (texId & 0x8000) {
                 tlut_obj = &attrP->tlut8000_obj;
                 tex_obj = &attrP->tex8000_obj;
-                if (!attrP->tlut8000_initialized) {
+                if (!attrP->tlut8000_initialized || attrP->tlut8000_pal != bmpPtr->palData) {
+                    if (attrP->tlut8000_initialized) {
+                        GXDestroyTlutObj(tlut_obj);
+                    }
+                    attrP->tlut8000_pal = bmpPtr->palData;
                     GXInitTlutObj(tlut_obj, &((s16 *)bmpPtr->palData)[(bmpPtr->palSize + 0xF) & 0xFFF0], GX_TL_IA8, bmpPtr->palSize);
                     attrP->tlut8000_initialized = TRUE;
                 }
@@ -1873,7 +1898,11 @@ static void LoadTexture(HU3DMODEL *modelP, HSFBITMAP *bmpPtr, HSFATTRIBUTE *attr
                 }
             }
             else {
-                if (!attrP->tlut_initialized) {
+                if (!attrP->tlut_initialized || attrP->tlut_pal != bmpPtr->palData) {
+                    if (attrP->tlut_initialized) {
+                    GXDestroyTlutObj(tlut_obj);
+                }
+                attrP->tlut_pal = bmpPtr->palData;
                     GXInitTlutObj(tlut_obj, bmpPtr->palData, GX_TL_IA8, bmpPtr->palSize);
                     attrP->tlut_initialized = TRUE;
                 }
