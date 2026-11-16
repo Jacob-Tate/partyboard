@@ -26,7 +26,7 @@ aurora::Module Log("partyboard::audio");
 std::recursive_mutex sAudioMutex;
 
 AIDCallback sDmaCallback = nullptr;
-s32 sMasterVolume = 100;
+std::atomic<s32> sMasterVolume = 100; // read on the audio thread
 
 bool sDeviceOpened = false;
 bool sDeviceStarted = false;
@@ -131,6 +131,8 @@ extern "C" {
 void partyboard_audio_lock(void) { sAudioMutex.lock(); }
 
 void partyboard_audio_unlock(void) { sAudioMutex.unlock(); }
+
+void partyboard_audio_set_master_volume(int percent) { sMasterVolume = std::clamp(percent, 0, 100); }
 
 void partyboard_audio_pre_init(void) {
     sMasterVolume = std::clamp(partyboard::getSettings().audio.masterVolume.getValue(), 0, 100);
