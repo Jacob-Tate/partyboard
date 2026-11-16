@@ -2,6 +2,7 @@
 // stroke font, so the art is ours; the layouts follow opentennis's Button Icons (B362).
 
 #include "port/button_icons.h"
+#include "port/netplay.h"
 #include "port/settings.h"
 #include "port/touch_pad.h"
 
@@ -1227,14 +1228,27 @@ int key_glyph_id(int port, GcInput in)
     }
 }
 
-// The glyph id of `in` for `port` in `family`: a Ctl, or a keycap's id for the keyboard.
-int family_glyph(int port, PbIconFamily family, GcInput in)
+// The game asks per seat (pad port). Online, a seat is not this machine's controller of that number: the seats
+// played here map to their local controllers, and everyone else's prompts show this machine's first controller.
+int local_port(int port)
 {
+    if (!partyboard_netplay_active()) {
+        return port;
+    }
+    const int slot = partyboard_netplay_local_slot(port);
+    return slot >= 0 ? slot : 0;
+}
+
+// The glyph id of `in` for `seat` in `family`: a Ctl, or a keycap's id for the keyboard.
+int family_glyph(int seat, PbIconFamily family, GcInput in)
+{
+    const int port = local_port(seat);
     return family == PB_FAMILY_KEYBOARD ? key_glyph_id(port, in) : family_ctl(port, family, in);
 }
 
-PbIconFamily auto_family(int port)
+PbIconFamily auto_family(int seat)
 {
+    const int port = local_port(seat);
     if (touch_pad_shown() && port == touch_pad_port()) {
         // N58: the last input was a touch on the on-screen pad, which plays this port
         return PB_FAMILY_TOUCH;
