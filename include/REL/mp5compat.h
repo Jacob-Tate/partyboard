@@ -136,6 +136,19 @@ typedef s16 GAMEMESID;
 #define HuAudJinglePlay(streamId) HuAudSStreamPlay(streamId)
 #define HuAudBGMPlay(streamId) HuAudSStreamPlay(streamId)
 
+// MP5's motion end checks honour the start/end range (Hu3DMotionStartEndSet / ShiftStartEndSet); MP4's wait for
+// the whole motion, so an MP5 game that plays part of a motion would wait forever (m524's winners kept turning).
+static BOOL Mp5MotionEndCheck(s16 modelId)
+{
+    HU3DMODEL *modelP = &Hu3DData[modelId];
+    if (!(modelP->motAttr & HU3D_MOTATTR_REV)) {
+        return modelP->motWork.end <= Hu3DMotionTimeGet(modelId) + 0.0001;
+    }
+    return Hu3DMotionTimeGet(modelId) <= modelP->motWork.start;
+}
+#define Hu3DMotionEndCheck(modelId) Mp5MotionEndCheck(modelId)
+#define CharMotionEndCheck(charNo) Mp5MotionEndCheck(CharModelIdGet(charNo))
+
 // MP5's landing dust: MP4's smoke puff at the feet.
 #ifndef CharModelLandDustCreate
 #define CharModelLandDustCreate(charNo, pos) CharEffectSmokeCreate(HU3D_CAM_ALL, (pos))
