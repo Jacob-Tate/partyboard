@@ -45,6 +45,14 @@ void HuDataInit(void)
     HUDATASTAT *read_stat;
     while(dir_stat->name) {
         if((dir_stat->entryNum = DVDConvertPathToEntrynum(dir_stat->name)) == -1) {
+#ifdef TARGET_PC
+            // Mario Party 5 archives exist only when an MP5 image is mounted (port/mp5disc.h).
+            if (strncmp(dir_stat->name, "mp5/", 4) == 0) {
+                i++;
+                dir_stat++;
+                continue;
+            }
+#endif
             OSReport("data.c: Data File Error(%s)\n", dir_stat->name);
             OSPanic("data.c", 65, "\n");
         }

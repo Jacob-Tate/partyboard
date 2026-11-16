@@ -336,7 +336,8 @@ static void DetermineMGList(bitcopy* arg0) {
     var_r31 = mgInfoTbl;
     
     for (var_r29 = var_r30 = 0; var_r30 < var_r27; var_r30++, var_r31++) {
-        if ((mgType == var_r31->type) && (var_r31->ovl != 0x29)) {
+        // Mario Party 5 ports (after the MP4 overlays) need an MP5 image every player may not have.
+        if ((mgType == var_r31->type) && (var_r31->ovl != 0x29) && (var_r31->ovl < DLL_m507dll)) {
             if ((GWMGListGet() != 2) || (GWMGCustomGet(var_r30 + 0x191) != 0)) {
                 if (GWMGListGet() == 1) {
                     var_r21 = 0;

@@ -101,6 +101,7 @@ set(PORT_FILES
         src/port/imgui.cpp
         src/port/io.cpp
         src/port/iso_validate.cpp
+        src/port/mp5disc.cpp
         src/port/msm.c
         src/port/OS.c
         src/port/portmain.cpp
@@ -376,6 +377,8 @@ set(REL_FILES
         src/REL/m462Dll/main.c
 
         src/REL/m463Dll/main.c
+        src/REL/m507Dll/effect.c
+        src/REL/m507Dll/main.c
 
         src/REL/mentDll/common.c
         src/REL/mentDll/main.c

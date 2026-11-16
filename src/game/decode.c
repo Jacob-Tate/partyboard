@@ -1,5 +1,8 @@
 #include "game/data.h"
 #include "dolphin/os.h"
+#ifdef TARGET_PC
+#include <zlib.h>
+#endif
 
 typedef struct Decode_s
 {
@@ -186,6 +189,19 @@ static void HuDecodeRle(DECODE *decode)
     }
 }
 
+#ifdef TARGET_PC
+// Mario Party 5's archives add zlib entries: u32 rawSize (big endian, unused), u32 compressedSize, stream.
+static void HuDecodeZlib(DECODE *decode)
+{
+    u8 *src = decode->src;
+    uLongf outLen = decode->size;
+    u32 inLen = ((u32)src[4] << 24) | ((u32)src[5] << 16) | ((u32)src[6] << 8) | src[7];
+    if (uncompress(decode->dst, &outLen, src + 8, inLen) != Z_OK) {
+        OSReport("zlib decode failed\n");
+    }
+}
+#endif
+
 void HuDecodeData(void *src, void *dst, u32 size, s32 decodeType)
 {
     struct Decode_s decode;
@@ -217,6 +233,12 @@ void HuDecodeData(void *src, void *dst, u32 size, s32 decodeType)
         case DATA_DECODE_RLE:
             HuDecodeRle(decodeP);
             break;
+
+#ifdef TARGET_PC
+        case DATA_DECODE_ZLIB:
+            HuDecodeZlib(decodeP);
+            break;
+#endif
             
         default:
             OSReport("decode tyep unknown.(%x)\n", decodeType);

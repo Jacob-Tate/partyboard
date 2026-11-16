@@ -26,6 +26,7 @@
 #include <port/config.hpp>
 #include <port/dolassets.h>
 #include <port/main.h>
+#include <port/mp5disc.h>
 #include <port/settings.h>
 #include <port/port_version.h>
 
@@ -346,6 +347,38 @@ static void EnsureInitialPipelineCache(const std::filesystem::path& configDir) {
     PartyBoardMainLog.info("Seeded pipeline cache from '{}'", initialPipelineCachePath.string());
 }
 
+// Mounts the optional Mario Party 5 image (MP5 minigame ports): the configured one, or else one found
+// next to the MP4 image (remembered once found).
+static void mount_mp5_disc(const std::string& mp4Path) {
+    auto& setting = partyboard::getSettings().backend.mp5IsoPath;
+    std::string path = setting.getValue();
+    if (!path.empty()) {
+        partyboard_mp5_mount(path.c_str());
+        return;
+    }
+    std::error_code ec;
+    const std::filesystem::path dir = std::filesystem::path(mp4Path).parent_path();
+    if (mp4Path.empty() || !std::filesystem::is_directory(dir, ec)) {
+        return;
+    }
+    for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+        std::string ext = entry.path().extension().string();
+        for (auto& c : ext) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        if (ext != ".rvz" && ext != ".iso" && ext != ".gcm" && ext != ".ciso" && ext != ".wia" && ext != ".gcz" &&
+            ext != ".nfs" && ext != ".tgc") {
+            continue;
+        }
+        const std::string candidate = entry.path().string();
+        if (candidate != mp4Path && partyboard_mp5_mount(candidate.c_str())) {
+            setting.setValue(candidate);
+            partyboard::config::Save();
+            return;
+        }
+    }
+}
+
 static constexpr PADDefaultMapping defaultPadMapping = {
     .buttons = {
         {SDL_GAMEPAD_BUTTON_SOUTH, PAD_BUTTON_A},
@@ -418,6 +451,9 @@ extern "C" int port_main(int argc, char* argv[]) {
     const PartyBoardAutotest* autotest = partyboard_autotest_get();
     if (autotest->isoPath != nullptr) {
         partyboard::getSettings().backend.isoPath.setValue(autotest->isoPath);
+    }
+    if (autotest->mp5IsoPath != nullptr) {
+        partyboard::getSettings().backend.mp5IsoPath.setValue(autotest->mp5IsoPath);
     }
     EnsureInitialPipelineCache(PartyBoard_ConfigPath);
     // TODO: How to handle this?
@@ -550,6 +586,7 @@ extern "C" int port_main(int argc, char* argv[]) {
     if (!aurora_dvd_open(dvd_path.c_str())) {
         PartyBoardMainLog.error("Failed to open DVD image: {}", dvd_path);
     }
+    mount_mp5_disc(dvd_path);
 
     PartyBoard_IsGameLaunched = true;
 

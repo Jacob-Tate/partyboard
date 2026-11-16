@@ -1,4 +1,5 @@
 #include "port/autotest.h"
+#include "port/mp5disc.h"
 
 #include "game/board/main.h"
 #include "game/chrman.h"
@@ -143,6 +144,9 @@ int partyboard_autotest_parse(int argc, char *argv[])
             i++;
         } else if (strcmp(arg, "--iso") == 0 && next) {
             sAutotest.isoPath = next;
+            i++;
+        } else if (strcmp(arg, "--mp5-iso") == 0 && next) {
+            sAutotest.mp5IsoPath = next;
             i++;
         } else if (strcmp(arg, "--board") == 0 && next) {
             if (parse_int(next, 0, 5, &value)) {
@@ -407,6 +411,12 @@ int partyboard_autotest_setup_minigame(void)
     index = sAutotest.minigame - 401;
     if (index < 0 || index >= count) {
         printf("[autotest] --minigame %d: no such minigame (401-%d); starting a board\n", sAutotest.minigame, 400 + count);
+        fflush(stdout);
+        return 0;
+    }
+    if (mgInfoTbl[index].ovl >= DLL_m507dll && !partyboard_mp5_available()) {
+        printf("[autotest] --minigame %d is a Mario Party 5 port: it needs an MP5 image (--mp5-iso); starting a board\n",
+            sAutotest.minigame);
         fflush(stdout);
         return 0;
     }

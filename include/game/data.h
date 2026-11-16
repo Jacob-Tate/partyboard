@@ -11,6 +11,7 @@
 #define DATA_DECODE_FSLIDE_ALT 3
 #define DATA_DECODE_FSLIDE 4
 #define DATA_DECODE_RLE 5
+#define DATA_DECODE_ZLIB 7 // Mario Party 5 archives (port/mp5disc.h)
 
 #define DATA_NUM_LISTEND -1U
 #define HU_DATANUM_NONE -1

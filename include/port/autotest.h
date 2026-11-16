@@ -43,6 +43,7 @@ typedef struct PartyBoardAutotest {
     int charsSet; // --chars was given
     int menu; // --menu: always open the Party Board menu (the restart after an online party)
     int minigame; // --minigame <401-4xx>: straight into that minigame instead of a board (0: off)
+    const char *mp5IsoPath; // --mp5-iso <path>: Mario Party 5 image for the MP5 minigame ports
 } PartyBoardAutotest;
 
 // Parses argv; unknown arguments are ignored. Returns 0 on a malformed option.

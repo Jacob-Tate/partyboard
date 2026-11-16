@@ -1144,6 +1144,26 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         0, // inst_mess[3]
     },
     {
+        // Night Light Fright, ported from Mario Party 5 (needs an MP5 image, port/mp5disc.h). Keep the MP5
+        // ports after MP4's own minigames so the board, records and saves never see a moved index.
+        DLL_m507dll, // ovl
+        0, // type
+        1, // flag (not in the board's lists)
+        255, // record_idx
+        MAKE_MESSID(0x17, 0x26), // name_mess (placeholder: no MP5 text yet)
+        DATADIR_MP5_M507, // data_dir
+        DATA_MAKE_NUM(DATADIR_INSTPIC, 39), // inst_pic[0] (placeholder)
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_INSTPIC, 39), // mg_pic[0] (placeholder)
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        0, // inst_mess[0]
+        0, // inst_mess[1]
+        0, // inst_mess[2]
+        0, // inst_mess[3]
+    },
+    {
         ((u16)DLL_NONE), // ovl
         0, // type
         0, // flag
