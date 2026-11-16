@@ -112,6 +112,25 @@ static s32 M507MotionData(s16 charNo, s32 i)
     return DATA_MAKE_NUM(i == 0 ? m507Mp5CharDir[charNo] : m507Mp5MotDir[charNo], mp5Num[i]);
 }
 
+// MP5 character motions also animate the eye texture through attribute tracks that name the attribute by
+// its index in MP5's model. MP4's models number their attributes differently (Yoshi's index 1 is not his
+// eyes), so those tracks would scramble other textures; MP4's character code animates the eyes itself.
+// The joints match MP4's (same names and rest positions), so the transform tracks are kept.
+static void M507MotionStripAttrTracks(s16 motId)
+{
+    HSFMOTION *motion;
+    s32 i;
+    if (motId < 0 || Hu3DMotion[motId].hsf == NULL) {
+        return;
+    }
+    motion = Hu3DMotion[motId].hsf->motion;
+    for (i = 0; i < motion->numTracks; i++) {
+        if (motion->track[i].type == HSF_TRACK_ATTRIBUTE) {
+            motion->track[i].type = 0; // ignored by the motion code
+        }
+    }
+}
+
 // Shadow scale per character (MP5's table, re-indexed to MP4 characters).
 static float M507CharScale(s16 charNo)
 {
@@ -536,6 +555,7 @@ void fn_1_790(omObjData *temp_r30)
     CharModelStepFxSet(temp_r31->unk14, 0);
     for (i = 0; i < 5; i++) {
         temp_r30->motion[i] = CharMotionCreate(temp_r31->unk14, M507MotionData(temp_r31->unk14, i));
+        M507MotionStripAttrTracks(temp_r30->motion[i]);
         CharMotionSet(temp_r31->unk14, temp_r30->motion[i]);
     }
     Hu3DModelAttrSet(temp_r30->model[0], HU3D_ATTR_DISPOFF);
