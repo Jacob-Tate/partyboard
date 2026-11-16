@@ -114,6 +114,8 @@ int partyboard_autotest_parse(int argc, char *argv[])
 
         if (strcmp(arg, "--quickstart") == 0) {
             sAutotest.quickstart = 1;
+        } else if (strcmp(arg, "--menu") == 0) {
+            sAutotest.menu = 1;
         } else if (strcmp(arg, "--fast") == 0) {
             sAutotest.fast = 1;
         } else if (strcmp(arg, "--loop") == 0) {

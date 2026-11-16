@@ -520,7 +520,7 @@ extern "C" int port_main(int argc, char* argv[]) {
 
     // Quickstart and --iso runs go straight to the game when a valid disc is configured.
     const bool autotestSkipsPrelaunch = (autotest->isoPath != nullptr || autotest->quickstart) && !forcePreLaunchUI;
-    if (!partyboard::getSettings().backend.skipPreLaunchUI && !autotestSkipsPrelaunch) {
+    if (autotest->menu || (!partyboard::getSettings().backend.skipPreLaunchUI && !autotestSkipsPrelaunch)) {
         partyboard::ui::push_document(std::make_unique<partyboard::ui::Prelaunch>(), true);
 
         // pre game launch ui main loop

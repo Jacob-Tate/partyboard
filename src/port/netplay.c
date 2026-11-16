@@ -1597,7 +1597,7 @@ static void relaunch(int toMenu)
                 skip = 1;
             }
         }
-        if (toMenu && strcmp(arg, "--quickstart") == 0) {
+        if (toMenu && (strcmp(arg, "--quickstart") == 0 || strcmp(arg, "--menu") == 0)) {
             skip = 1;
         }
         if (skip) {
@@ -1623,6 +1623,7 @@ static void relaunch(int toMenu)
     args[n++] = "--wait-pid";
     args[n++] = pid;
     if (toMenu) {
+        args[n++] = "--menu"; // even with --iso or "skip the menu" set
         goto start;
     }
     args[n++] = "--reloaded";

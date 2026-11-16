@@ -39,6 +39,7 @@ typedef struct PartyBoardAutotest {
     unsigned int maxFrames;
     unsigned int dumpFrame;
     const char *isoPath;
+    int menu; // --menu: always open the Party Board menu (the restart after an online party)
     const char *checksumLogPath;
     int charsSet; // --chars was given
 } PartyBoardAutotest;
