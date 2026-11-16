@@ -19,7 +19,8 @@
 //
 // Rejoining mid-game: --join the room's code with the same --name. Everyone's game restarts at the next save
 // point (after the current round's minigame) and continues from there with you back in your seat. The
-// restarted games get --reloaded, --wait-pid <old pid> and, on the host, --save-into <its autosave>.
+// restarted games get --reloaded <why>, --wait-pid <old pid> and, on the host, --save-into <its autosave>. A lost
+// connection or a desync restarts the same way (from the last save point everyone agreed on, for a desync).
 //
 // The host's --board, --turns, --cpu-level and --seed choose the game; the host's --chars sets all
 // four characters. Without --port/--char, people get ports 1, 2, ... in join order and the first
@@ -120,6 +121,10 @@ void partyboard_netplay_checksum(u32 frame, u32 hash);
 // from. If someone is waiting to rejoin, sends it to the server and quits; the shutdown then restarts this
 // program, which rejoins the room and continues from that state with everyone else.
 void partyboard_netplay_save_point(const u8 *state, int size);
+// Flashes the taskbar button if the window is in the background (the game needs this player).
+void partyboard_netplay_attention(void);
+// Board: player `player`'s turn starts (every machine); gets the attention of the person who plays it.
+void partyboard_netplay_turn_starts(int player);
 // Rejoining after a reload: a restarted game first waits for the old process (--wait-pid) to exit, so the two
 // never share the log file or the window. Call first thing in main.
 void partyboard_netplay_wait_for_parent(int argc, char *argv[]);

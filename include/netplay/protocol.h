@@ -19,7 +19,7 @@
 extern "C" {
 #endif
 
-#define PB_NET_PROTOCOL_VERSION 6
+#define PB_NET_PROTOCOL_VERSION 7
 #define PB_NET_DEFAULT_PORT 7845
 #define PB_NET_CHANNEL_CONTROL 0
 #define PB_NET_CHANNEL_INPUT 1
@@ -51,7 +51,7 @@ typedef enum PbNetMsg {
     PB_MSG_CREATE_ROOM = 2, // (empty)
     // char code[4]. Joining a room whose game is running puts you on a CPU's seat (the one saved under your
     // name if there is one) to wait: from then on FRAMEs carry PB_FRAME_RELOAD, every player's game sends
-    // RELOAD_STATE at its next save point and restarts, and everyone rejoins the room by code and name.
+    // SAVE_POINT (restarting) at its next save point and restarts, and everyone rejoins the room by code and name.
     PB_MSG_JOIN_ROOM = 3,
     PB_MSG_LEAVE_ROOM = 4,  // (empty)
     // PbNetSettings (host only). chars and portOwner are ignored: the server fills them in from the
@@ -77,10 +77,12 @@ typedef enum PbNetMsg {
     // the lowest free seat. Later joiners are seated the same way. CHOOSE may move to a free port but
     // not change character, and SET_LAYOUT may only rearrange people.
     PB_MSG_SET_CONTINUE = 10,
-    // In game, at the first save point after a FRAME with PB_FRAME_RELOAD: u32 frame, u16 stateSize, the board
-    // state (as START_GAME's). The server ends the game, keeps the room for PB_NET_RELOAD_TIMEOUT_MS while
-    // everyone restarts and rejoins (seated by name), then starts it from this state by itself.
-    PB_MSG_RELOAD_STATE = 11,
+    // In game, at every save point (after each round's minigame): u32 frame, u8 restarting, u16 stateSize, the
+    // board state (as START_GAME's). When every player's state agrees it becomes the room's recovery point: a
+    // desync restarts the game from there (RESTART). restarting is 1 at the first save point after a FRAME
+    // with PB_FRAME_RELOAD: the server ends the game, keeps the room for PB_NET_RELOAD_TIMEOUT_MS while everyone
+    // restarts and rejoins (seated by name), then starts it from this state by itself.
+    PB_MSG_SAVE_POINT = 11,
 
     // server -> client
     PB_MSG_WELCOME = 64,     // u8 clientId
@@ -93,7 +95,7 @@ typedef enum PbNetMsg {
     PB_MSG_ROOM_STATE = 66,
     PB_MSG_GAME_START = 67,  // PbNetSettings, u16 stateSize, stateSize bytes (as START_GAME)
     PB_MSG_FRAME = 68,       // u32 frame, u8 humanMask, u8 flags (PB_FRAME_*), for each mask bit (port 0..3): u8 pad[padSize]
-    PB_MSG_DESYNC = 69,      // u32 frame
+    PB_MSG_DESYNC = 69,      // u32 frame. The game ends (GAME_ENDED follows) unless a RESTART follows instead.
     PB_MSG_GAME_ENDED = 70,  // u8 reason (PbNetEndReason), u8 clientId (who left, or 0xFF)
     // A player disconnected mid-game. Their ports leave the FRAME human mask starting at u32 frame;
     // every client turns those ports into CPU players when it reaches that frame.
@@ -103,6 +105,9 @@ typedef enum PbNetMsg {
     PB_MSG_WAITING = 72,        // u8 missingPorts, u16 waitedMs
     // To the players of a running game: someone joined to take a seat back. u8 port, str name.
     PB_MSG_REJOINING = 73,
+    // Restart now and rejoin the room by code and name: the game goes on from the last save point everyone
+    // agreed on (or starts over, before the first one). u8 reason (PbNetRestartReason).
+    PB_MSG_RESTART = 74,
 } PbNetMsg;
 
 typedef enum PbNetError {
@@ -120,6 +125,10 @@ typedef enum PbNetEndReason {
     PB_END_PLAYER_LEFT = 1,
     PB_END_DESYNC = 2,
 } PbNetEndReason;
+
+typedef enum PbNetRestartReason {
+    PB_RESTART_DESYNC = 1,
+} PbNetRestartReason;
 
 // Everything every client needs to boot the same game. Serialized field by field.
 typedef struct PbNetSettings {

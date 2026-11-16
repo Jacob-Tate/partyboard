@@ -9,7 +9,10 @@
 
 #include <enet/enet.h>
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_init.h>
 #include <SDL3/SDL_messagebox.h>
+#include <SDL3/SDL_render.h>
+#include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_video.h>
 #include "game/object.h" // after enet.h: it pulls in windows.h, which must not come before winsock2
@@ -65,7 +68,10 @@ static char sBuildId[PB_NET_MAX_BUILD_ID + 1];
 // sReloading once we reached it and quit to restart.
 static int sReloadWanted = 0;
 static int sReloading = 0;
-static int sReloaded = 0; // --reloaded: this process is such a restart
+static int sReloaded = 0; // --reloaded <why>: this process is such a restart
+static char sReloadedWhy[16]; // "rejoin", "desync" or "reconnect"
+static const char *sRestartWhy = "rejoin"; // why this process is about to restart
+static void begin_restart(const char *why);
 // The command line, to restart with (without the netplay options, which the restart sets itself).
 static int sArgc = 0;
 static char **sArgv = NULL;
@@ -141,8 +147,10 @@ int partyboard_netplay_parse(int argc, char *argv[])
             // A restarted host keeps autosaving into the game's file (see partyboard_netplay_save_point).
             partyboard_online_save_continue_into(next);
             i++;
-        } else if (strcmp(arg, "--reloaded") == 0) {
+        } else if (strcmp(arg, "--reloaded") == 0 && next) {
             sReloaded = 1;
+            snprintf(sReloadedWhy, sizeof(sReloadedWhy), "%s", next);
+            i++;
         } else if (strcmp(arg, "--wait-pid") == 0 && next) {
             i++; // handled by partyboard_netplay_wait_for_parent
         } else if (strcmp(arg, "--port") == 0 && next) {
@@ -183,7 +191,11 @@ int partyboard_netplay_active(void)
 
 static void send_writer(int channel, const PbNetWriter *w)
 {
-    ENetPacket *packet = enet_packet_create(w->data, w->pos, ENET_PACKET_FLAG_RELIABLE);
+    ENetPacket *packet;
+    if (sPeer == NULL) {
+        return;
+    }
+    packet = enet_packet_create(w->data, w->pos, ENET_PACKET_FLAG_RELIABLE);
     enet_peer_send(sPeer, (enet_uint8)channel, packet);
     enet_host_flush(sHost);
 }
@@ -375,13 +387,16 @@ static void handle_packet(const u8 *data, size_t size)
     case PB_MSG_FRAME:
         handle_frame(&r);
         break;
-    case PB_MSG_DESYNC: {
-        char why[160];
-        snprintf(why, sizeof(why),
-            "Out of sync at frame %u. The host can continue from the last save: Play Online > Saved Game.", pbr_u32(&r));
-        end_game(why);
+    case PB_MSG_DESYNC:
+        // A RESTART follows (or GAME_ENDED, if restarting didn't help).
+        printf("[netplay] out of sync at frame %u\n", pbr_u32(&r));
+        fflush(stdout);
         break;
-    }
+    case PB_MSG_RESTART:
+        if (sActive && !sEnded) {
+            begin_restart("desync");
+        }
+        break;
     case PB_MSG_WAITING:
         sWaitingMask = pbr_u8(&r);
         sWaitingMs = pbr_u16(&r);
@@ -411,7 +426,11 @@ static void handle_packet(const u8 *data, size_t size)
     }
     case PB_MSG_GAME_ENDED: {
         const u8 reason = pbr_u8(&r);
-        end_game(reason == PB_END_PLAYER_LEFT ? "a player left, game over" : "game ended by the server");
+        end_game(reason == PB_END_PLAYER_LEFT ? "a player left, game over"
+                 : reason == PB_END_DESYNC
+                     ? "Out of sync again after restarting. The host can continue from the last save: Play Online > "
+                       "Saved Game."
+                     : "game ended by the server");
         break;
     }
     default:
@@ -955,6 +974,106 @@ const char *partyboard_netplay_member_name(int index)
     return (index >= 0 && index < sRoomCount) ? sRoomNames[index] : "";
 }
 
+// A restarted game has no window until the game starts again: this small one says what is going on.
+static SDL_Window *sWaitWindow = NULL;
+static SDL_Renderer *sWaitRenderer = NULL;
+
+static void wait_window_close(void)
+{
+    if (sWaitRenderer) {
+        SDL_DestroyRenderer(sWaitRenderer);
+        sWaitRenderer = NULL;
+    }
+    if (sWaitWindow) {
+        SDL_DestroyWindow(sWaitWindow);
+        sWaitWindow = NULL;
+        SDL_QuitSubSystem(SDL_INIT_VIDEO); // the game initializes video its own way
+    }
+}
+
+// Draws the lines (wrapped). Returns 0 once the player closed the window.
+static int wait_window_update(const char *const *lines, int count)
+{
+    const float scale = 2.0f;
+    const int width = 760, cols = (int)(width / (8 * scale)) - 2;
+    SDL_Event event;
+    int i;
+    float y = 10;
+    if (!sWaitWindow) {
+        if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
+            return 1;
+        }
+        sWaitWindow = SDL_CreateWindow("Party Board", width, 230, 0);
+        sWaitRenderer = sWaitWindow ? SDL_CreateRenderer(sWaitWindow, NULL) : NULL;
+        if (!sWaitRenderer) {
+            wait_window_close();
+            return 1;
+        }
+    }
+    while (SDL_PollEvent(&event)) {
+        if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+            return 0;
+        }
+    }
+    SDL_SetRenderScale(sWaitRenderer, 1.0f, 1.0f);
+    SDL_SetRenderDrawColor(sWaitRenderer, 24, 28, 48, 255);
+    SDL_RenderClear(sWaitRenderer);
+    SDL_SetRenderScale(sWaitRenderer, scale, scale);
+    for (i = 0; i < count; i++) {
+        const char *text = lines[i];
+        SDL_SetRenderDrawColor(sWaitRenderer, i == 0 ? 255 : 200, i == 0 ? 220 : 205, i == 0 ? 120 : 220, 255);
+        // Word wrap at `cols` characters.
+        while (*text) {
+            char row[128];
+            int len = (int)strlen(text), cut = len;
+            if (len > cols) {
+                for (cut = cols; cut > 0 && text[cut] != ' '; cut--) {}
+                if (cut == 0) {
+                    cut = cols;
+                }
+            }
+            snprintf(row, sizeof(row), "%.*s", cut, text);
+            SDL_RenderDebugText(sWaitRenderer, 8, y / scale + 4, row);
+            y += 22;
+            text += cut;
+            while (*text == ' ') {
+                text++;
+            }
+        }
+        y += 12;
+    }
+    SDL_RenderPresent(sWaitRenderer);
+    return 1;
+}
+
+// The restarted game's waiting window: why we restarted and who is back so far.
+static int show_restart_wait(const char *retrying)
+{
+    const char *title = strcmp(sReloadedWhy, "desync") == 0 ? "The games went out of sync."
+                        : strcmp(sReloadedWhy, "reconnect") == 0 ? "Lost the connection to the server."
+                                                                  : "A player is rejoining.";
+    char status[300];
+    const char *lines[3];
+    if (retrying) {
+        snprintf(status, sizeof(status), "Getting back into room %s... (%s)", sJoinCode, retrying);
+    } else if (sRoomCount > 0) {
+        int i;
+        snprintf(status, sizeof(status), "Back in room %s:", sRoomCode);
+        for (i = 0; i < sRoomCount; i++) {
+            snprintf(status + strlen(status), sizeof(status) - strlen(status), "%s %s", i ? "," : "", sRoomNames[i]);
+        }
+        snprintf(status + strlen(status), sizeof(status) - strlen(status),
+            sRoomPhase == PB_ROOM_IN_GAME ? ". You're back in after this round's minigame."
+                                          : ". The game goes on once everyone is back.");
+    } else {
+        snprintf(status, sizeof(status), "Getting back into room %s...", sJoinCode);
+    }
+    lines[0] = title;
+    lines[1] = status;
+    lines[2] = "Close this window to give up.";
+    return wait_window_update(lines, 3);
+}
+
 // Command-line flow (--server ... --create/--join): console lobby before the window opens.
 int partyboard_netplay_lobby(void)
 {
@@ -965,6 +1084,7 @@ int partyboard_netplay_lobby(void)
     char server[300];
     char name[PB_NET_MAX_NAME + 1];
     char code[PB_NET_ROOM_CODE_LEN + 1];
+    const Uint64 startTicks = SDL_GetTicks();
     // begin() rewrites the server/name/code buffers, so hand it copies.
     snprintf(server, sizeof(server), "%s:%u", sServerHost, sServerPort);
     snprintf(name, sizeof(name), "%s", sName);
@@ -980,9 +1100,34 @@ int partyboard_netplay_lobby(void)
     fflush(stdout);
     while (sState != PB_LOBBY_STARTED) {
         lobby_update(50);
+        if (sReloaded && !show_restart_wait(NULL)) {
+            printf("[netplay] gave up getting back into the game\n");
+            wait_window_close();
+            return 0;
+        }
         if (sState == PB_LOBBY_FAILED) {
+            if (sReloaded && SDL_GetTicks() - startTicks < 60000) {
+                // The server may not have noticed our old connection drop yet, or the network is still down:
+                // keep trying for a minute.
+                char why[300];
+                const Uint64 until = SDL_GetTicks() + 2000;
+                snprintf(why, sizeof(why), "%s", sError);
+                printf("[netplay] couldn't get back in yet (%s); retrying\n", why);
+                fflush(stdout);
+                while (SDL_GetTicks() < until) {
+                    if (!show_restart_wait(why)) {
+                        wait_window_close();
+                        return 0;
+                    }
+                    SDL_Delay(50);
+                }
+                snprintf(code, sizeof(code), "%s", sJoinCode);
+                partyboard_netplay_begin(server, name, sCreate, code);
+                continue;
+            }
             if (sReloaded) {
                 char msg[400];
+                wait_window_close();
                 snprintf(msg, sizeof(msg), "Couldn't get back into the online game after it restarted:\n%s", sError);
                 SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Party Board", msg, NULL);
             }
@@ -1032,6 +1177,7 @@ int partyboard_netplay_lobby(void)
             startSent = 1;
         }
     }
+    wait_window_close();
     return 1;
 }
 
@@ -1205,6 +1351,36 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
         }
     }
     send_input(sFrame + sSettings.inputDelay, local);
+    {
+        // Test aids (off unless set; not in a restarted game): PB_NETPLAY_TEST_DESYNC=<frame> changes this
+        // game's state at that frame, PB_NETPLAY_TEST_DROP=<frame> drops the connection without a word.
+        static int desyncAt = -1, dropAt = -1;
+        if (desyncAt < 0) {
+            const char *env = getenv("PB_NETPLAY_TEST_DESYNC");
+            desyncAt = env && !sReloaded ? atoi(env) : 0;
+            env = getenv("PB_NETPLAY_TEST_DROP");
+            dropAt = env && !sReloaded ? atoi(env) : 0;
+        }
+        if (desyncAt > 0 && sFrame == (u32)desyncAt) {
+            printf("[netplay] test: desyncing at frame %u\n", sFrame);
+            GWPlayer[0].coins++;
+        }
+        if (dropAt > 0 && sFrame == (u32)dropAt) {
+            printf("[netplay] test: dropping the connection at frame %u\n", sFrame);
+            enet_peer_reset(sPeer);
+            sPeer = NULL;
+            begin_restart("reconnect");
+            return partyboard_netplay_pad_read(status);
+        }
+    }
+    {
+        // A minigame's instructions wait for everyone: get the attention of a player who looked away.
+        static s16 lastOvl = -1;
+        if (omcurovl != lastOvl && omcurovl == DLL_instdll && sOwnedMask) {
+            partyboard_netplay_attention();
+        }
+        lastOvl = omcurovl;
+    }
 
     slot = &sRing[sFrame % NET_RING];
     while (!(slot->valid && slot->frame == sFrame)) {
@@ -1212,10 +1388,14 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
             show_waiting(waited);
         }
         if (!pump(1)) {
-            end_game("lost connection to the server");
+            if (sRoomCode[0] && sServerHost) {
+                begin_restart("reconnect"); // restart and get back into the room
+            } else {
+                end_game("lost connection to the server");
+            }
             return partyboard_netplay_pad_read(status);
         }
-        if (sEnded) {
+        if (sEnded || sReloading) {
             return partyboard_netplay_pad_read(status);
         }
         if (++waited > NET_WAIT_TIMEOUT_MS) {
@@ -1264,7 +1444,7 @@ void partyboard_netplay_checksum(u32 frame, u32 hash)
 {
     u8 buf[16];
     PbNetWriter w;
-    if (!sActive || sEnded) {
+    if (!sActive || sEnded || sReloading) {
         return;
     }
     pbw_init(&w, buf, sizeof(buf));
@@ -1279,27 +1459,62 @@ void partyboard_netplay_checksum(u32 frame, u32 hash)
 static char sRelaunchCode[PB_NET_ROOM_CODE_LEN + 1];
 static char sRelaunchSave[600];
 
+// Quit now and restart into the same room (see relaunch).
+static void begin_restart(const char *why)
+{
+    if (sReloading) {
+        return;
+    }
+    snprintf(sRelaunchCode, sizeof(sRelaunchCode), "%s", sRoomCode);
+    // The host's restarted game keeps writing the same autosave.
+    snprintf(sRelaunchSave, sizeof(sRelaunchSave), "%s", partyboard_online_save_host_path());
+    sRestartWhy = why;
+    printf("[netplay] frame %u: restarting (%s) to get back into room %s\n", sFrame, why, sRelaunchCode);
+    fflush(stdout);
+    sReloading = 1;
+    PartyBoard_IsRunning = false;
+}
+
 void partyboard_netplay_save_point(const u8 *state, int size)
 {
     u8 buf[16 + PB_NET_MAX_CONTINUE_STATE];
     PbNetWriter w;
-    if (!sActive || sEnded || sReloading || !sReloadWanted || size <= 0 || size > PB_NET_MAX_CONTINUE_STATE) {
+    if (!sActive || sEnded || sReloading || size <= 0 || size > PB_NET_MAX_CONTINUE_STATE) {
         return;
     }
+    // Every save point goes to the server: once all players' states agree it is where a desync restarts from.
     pbw_init(&w, buf, sizeof(buf));
-    pbw_u8(&w, PB_MSG_RELOAD_STATE);
+    pbw_u8(&w, PB_MSG_SAVE_POINT);
     pbw_u32(&w, sFrame);
+    pbw_u8(&w, sReloadWanted ? 1 : 0);
     pbw_u16(&w, (u16)size);
     pbw_bytes(&w, state, (size_t)size);
     send_writer(PB_NET_CHANNEL_CONTROL, &w);
-    snprintf(sRelaunchCode, sizeof(sRelaunchCode), "%s", sRoomCode);
-    // The host's restarted game keeps writing the same autosave.
-    snprintf(sRelaunchSave, sizeof(sRelaunchSave), "%s", partyboard_online_save_host_path());
-    printf("[netplay] frame %u: save point; restarting so the returning player can join (room %s)\n", sFrame,
-        sRelaunchCode);
-    fflush(stdout);
-    sReloading = 1;
-    PartyBoard_IsRunning = false;
+    if (sReloadWanted) {
+        begin_restart("rejoin"); // someone waits to rejoin: everyone restarts from here
+    }
+}
+
+void partyboard_netplay_attention(void)
+{
+    SDL_Window **windows;
+    int count = 0;
+    if (!sActive || sEnded) {
+        return;
+    }
+    windows = SDL_GetWindows(&count);
+    if (windows != NULL && count > 0 && !(SDL_GetWindowFlags(windows[0]) & SDL_WINDOW_INPUT_FOCUS)) {
+        SDL_FlashWindow(windows[0], SDL_FLASH_UNTIL_FOCUSED);
+    }
+    SDL_free(windows);
+}
+
+void partyboard_netplay_turn_starts(int player)
+{
+    if (player >= 0 && player < PB_NET_MAX_PLAYERS && !GWPlayer[player].com &&
+        (sOwnedMask & (1 << (GWPlayer[player].port & 3)))) {
+        partyboard_netplay_attention();
+    }
 }
 
 #ifdef _WIN32
@@ -1353,8 +1568,8 @@ static void append_arg(char *cmd, size_t cap, const char *arg)
 static void relaunch(void)
 {
     static const char *const withValue[] = { "--server", "--join", "--players", "--delay", "--name", "--char", "--port",
-        "--continue", "--save-into", "--wait-pid" };
-    static const char *const flags[] = { "--create", "--teams", "--no-bonus-stars", "--reloaded" };
+        "--continue", "--save-into", "--wait-pid", "--reloaded" };
+    static const char *const flags[] = { "--create", "--teams", "--no-bonus-stars" };
     const char *args[160];
     char server[300], pid[32], checksumLog[1024];
     int n = 0;
@@ -1397,6 +1612,7 @@ static void relaunch(void)
     args[n++] = "--wait-pid";
     args[n++] = pid;
     args[n++] = "--reloaded";
+    args[n++] = sRestartWhy;
     args[n++] = "--server";
     args[n++] = server;
     args[n++] = "--join";

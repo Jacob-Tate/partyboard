@@ -194,6 +194,18 @@ void sendChecksum(TestClient &c, uint32_t frame, uint32_t hash) {
     c.send(PB_NET_CHANNEL_CONTROL, w);
 }
 
+void sendSavePoint(TestClient &c, uint32_t frame, bool restarting, const uint8_t *state, uint16_t size) {
+    std::vector<uint8_t> buf(16 + size);
+    PbNetWriter w;
+    pbw_init(&w, buf.data(), buf.size());
+    pbw_u8(&w, PB_MSG_SAVE_POINT);
+    pbw_u32(&w, frame);
+    pbw_u8(&w, restarting ? 1 : 0);
+    pbw_u16(&w, size);
+    pbw_bytes(&w, state, size);
+    c.send(PB_NET_CHANNEL_CONTROL, w);
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -375,11 +387,26 @@ int main(int argc, char **argv) {
                       std::memcmp(gb.data() + 1 + r.pos, state, n) == 0 && got.portOwner[3] == idB && got.chars[0] == 7;
         }
         CHECK(!ga.empty() && ga == gb && stateOk, "both get the continued game's start with the saved state");
-        // End that game (a forced desync), then Bob leaves the room and comes back by its code.
-        sendChecksum(a, 60, 1);
-        sendChecksum(b, 60, 2);
-        a.waitFor(PB_MSG_GAME_ENDED);
-        b.waitFor(PB_MSG_GAME_ENDED);
+        // A desync restarts everyone from the last agreed save point: here none yet, so the continued game's own
+        // start. Everyone rejoins by name and gets the same start again. The third desync in a row ends the game.
+        for (int round = 0; round < 3; round++) {
+            sendChecksum(a, 60, 1);
+            sendChecksum(b, 60, 2);
+            CHECK(!a.waitFor(PB_MSG_DESYNC).empty() && !b.waitFor(PB_MSG_DESYNC).empty(), "desync %d reported", round + 1);
+            if (round == 2) break;
+            auto ra = a.waitFor(PB_MSG_RESTART);
+            auto rb = b.waitFor(PB_MSG_RESTART);
+            CHECK(ra.size() == 2 && ra[1] == PB_RESTART_DESYNC && ra == rb, "desync %d restarts everyone", round + 1);
+            simple(b, PB_MSG_JOIN_ROOM, code, 4); // Bob back first: Alice still gets host back by name
+            simple(a, PB_MSG_JOIN_ROOM, code, 4);
+            auto ga2 = a.waitFor(PB_MSG_GAME_START);
+            auto gb2 = b.waitFor(PB_MSG_GAME_START);
+            CHECK(!ga2.empty() && ga2 == ga && gb2 == ga,
+                  "after restart %d both get the same start again (Alice P3, Bob P4, saved state)", round + 1);
+        }
+        CHECK(!a.waitFor(PB_MSG_GAME_ENDED).empty() && !b.waitFor(PB_MSG_GAME_ENDED).empty(),
+              "a desync that restarting didn't fix ends the game");
+        // Then Bob leaves the room and comes back by its code.
         simple(b, PB_MSG_LEAVE_ROOM);
         a.waitFor(PB_MSG_ROOM_STATE);
         simple(b, PB_MSG_JOIN_ROOM, code, 4);
@@ -464,19 +491,39 @@ int main(int argc, char **argv) {
     }
     CHECK(expect == frames + 1, "all %u frames delivered (last %u)", frames, expect - 1);
 
-    // Matching checksums are silent; a mismatch ends the game for everyone.
+    // Both reach a save point with the same state: that becomes the point a desync restarts from.
+    uint8_t saved[412];
+    for (int i = 0; i < 412; i++) saved[i] = static_cast<uint8_t>(i * 5 + 1);
+    sendSavePoint(a, 250, false, saved, sizeof(saved));
+    sendSavePoint(b, 250, false, saved, sizeof(saved));
+
+    // Matching checksums are silent; a mismatch restarts everyone from that save point.
     sendChecksum(a, 60, 0x1111);
     sendChecksum(b, 60, 0x1111);
     CHECK(a.waitFor(PB_MSG_DESYNC, 300).empty(), "matching checksums cause no desync");
     sendChecksum(a, 120, 0x2222);
     sendChecksum(b, 120, 0x3333);
     CHECK(!a.waitFor(PB_MSG_DESYNC).empty() && !b.waitFor(PB_MSG_DESYNC).empty(), "mismatch reported to both");
-    CHECK(!a.waitFor(PB_MSG_GAME_ENDED).empty(), "game ended after desync");
+    CHECK(!a.waitFor(PB_MSG_RESTART).empty() && !b.waitFor(PB_MSG_RESTART).empty(), "both told to restart");
+    simple(a, PB_MSG_JOIN_ROOM, code, 4);
+    simple(b, PB_MSG_JOIN_ROOM, code, 4);
+    {
+        auto sa = a.waitFor(PB_MSG_GAME_START);
+        auto sb = b.waitFor(PB_MSG_GAME_START);
+        bool ok = false;
+        if (!sa.empty()) {
+            PbNetReader r;
+            PbNetSettings got;
+            pbr_init(&r, sa.data() + 1, sa.size() - 1);
+            pbr_settings(&r, &got);
+            const uint16_t n = pbr_u16(&r);
+            ok = !r.error && n == sizeof(saved) && std::memcmp(sa.data() + 1 + r.pos, saved, n) == 0 &&
+                 got.portOwner[0] == idA && got.portOwner[1] == idB && got.seed == 1234;
+        }
+        CHECK(ok && sa == sb, "the restarted game goes on from the agreed save point");
+    }
 
     // A player leaving mid-game: their port becomes CPU and the game goes on for the rest.
-    simple(a, PB_MSG_START_GAME, sbuf, sw.pos);
-    a.waitFor(PB_MSG_GAME_START);
-    b.waitFor(PB_MSG_GAME_START);
     sendInput(a, 0, 0x11);
     sendInput(a, 1, 0x12); // frames 0-1 wait on Bob...
     sendInput(b, 0, 0x21);
@@ -528,14 +575,7 @@ int main(int argc, char **argv) {
         // Alice's game reaches the save point: the room reloads; Bob keeps P2, P1 waits for Alice by name.
         uint8_t state[412];
         for (int i = 0; i < 412; i++) state[i] = static_cast<uint8_t>(i * 3);
-        uint8_t rbuf[16 + sizeof(state)];
-        PbNetWriter rw;
-        pbw_init(&rw, rbuf, sizeof(rbuf));
-        pbw_u8(&rw, PB_MSG_RELOAD_STATE);
-        pbw_u32(&rw, 4);
-        pbw_u16(&rw, sizeof(state));
-        pbw_bytes(&rw, state, sizeof(state));
-        a.send(PB_NET_CHANNEL_CONTROL, rw);
+        sendSavePoint(a, 4, true, state, sizeof(state));
         st = parseRoomState(b2.waitFor(PB_MSG_ROOM_STATE));
         CHECK(st.ok && st.phase == PB_ROOM_RELOADING && st.count == 1 && st.owner[1] == idB2 && st.owner[0] == CPU &&
                   st.continuing && st.savedName[0] == "Alice" && st.savedName[1] == "Bob",

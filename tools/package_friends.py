@@ -51,6 +51,10 @@ Good to know
   - If someone disconnects, a CPU takes over their player and the party goes on. To get back in, they
     join the same Room Code with the same name: after that round's minigame everyone's game restarts
     by itself (the window closes and reopens) and goes on with them back in their seat.
+  - If your connection drops, the game restarts and gets you back in by itself (keep the small
+    "Party Board" window open). If the games ever go out of sync, everyone's game restarts from the
+    last save point the same way.
+  - The taskbar button flashes when it's your turn or a minigame is about to start.
   - If the game stops to wait for someone, the window title says who.
   - START pauses the game for everyone.
   - Something went wrong? Settings > Interface > Open Data Folder, and send logs\\partyboard.log.

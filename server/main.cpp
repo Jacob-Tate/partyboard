@@ -93,7 +93,17 @@ struct Room {
     uint32_t reloadStartMs = 0;
     uint8_t reloadExpect = 0; // ports whose people we wait for before starting
     std::vector<uint8_t> reloadState;
+    // Desync recovery: the board state at the last save point every player agreed on (the game's starting state
+    // until the first one; empty = a new game, which starts over), and how many desyncs in a row restarted from it.
+    std::vector<uint8_t> recoveryState;
+    int desyncRestarts = 0;
+    // The lobby's continuing/savedName while a reload borrows them to seat people by name.
+    bool lobbyContinuing = false;
+    std::array<std::string, PB_NET_MAX_PLAYERS> lobbySavedName;
+    std::map<uint32_t, std::map<uint8_t, std::vector<uint8_t>>> saveReports; // frame -> client -> state
 };
+
+constexpr int kMaxDesyncRestarts = 2;
 
 std::map<uint8_t, std::unique_ptr<Client>> gClients;
 std::map<std::string, std::unique_ptr<Room>> gRooms;
@@ -345,12 +355,23 @@ void startGame(Room &room, PbNetSettings s, const std::vector<uint8_t> &state) {
             room.gameNames[port] = room.continuing ? room.savedName[port] : "";
         }
     }
+    // ...unless that person now plays another seat.
+    for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+        if (s.portOwner[port] != PB_NET_PORT_CPU) continue;
+        for (int other = 0; other < PB_NET_MAX_PLAYERS; other++) {
+            if (s.portOwner[other] != PB_NET_PORT_CPU && room.gameNames[other] == room.gameNames[port]) {
+                room.gameNames[port].clear();
+            }
+        }
+    }
     room.hostName = gClients.at(room.hostId)->name;
     room.settings = s;
     room.humanMask = humanMask;
     room.inGame = true;
     room.reloading = false;
     room.reloadState.clear();
+    room.recoveryState = state; // a desync before the first save point restarts from here
+    room.saveReports.clear();
     room.waiting.clear();
     room.nextFrame = 0;
     room.lastProgressMs = enet_time_get();
@@ -382,8 +403,9 @@ void startReloadedIfReady(Room &room) {
     if (timedOut) logf("room %s: not everyone came back in time; starting with ports 0x%x", room.code.c_str(), seated);
     const std::vector<uint8_t> state = room.reloadState;
     startGame(room, room.settings, state);
-    room.continuing = false;
-    room.savedName = {};
+    // Back to the lobby's own continue state (a continued game's room keeps showing its saved names).
+    room.continuing = room.lobbyContinuing;
+    room.savedName = room.lobbySavedName;
 }
 
 // Someone joins while the game runs: they get a CPU's seat (the one saved under their name if it is free) and
@@ -430,26 +452,16 @@ void joinRunningGame(Client &c, Room &room) {
     sendRoomState(room);
 }
 
-// A player's game reached the save point after a reload request: end the game and wait for everyone to come
-// back (their games restart and rejoin by name), then start from this state.
-void onReloadState(Client &c, PbNetReader &r) {
-    Room *room = c.room;
-    const uint32_t frame = pbr_u32(&r);
-    const uint16_t size = pbr_u16(&r);
-    std::vector<uint8_t> state(size <= PB_NET_MAX_CONTINUE_STATE ? size : 0);
-    pbr_bytes(&r, state.data(), state.size());
-    if (r.error || size == 0 || size > PB_NET_MAX_CONTINUE_STATE) {
-        return sendError(c, PB_ERR_BAD_MESSAGE, "malformed RELOAD_STATE");
-    }
-    // The first player there decides; the others' copies (identical in lockstep) arrive after the room moved on.
-    if (!room || !room->inGame || room->waiting.count(c.id)) return;
-    Room &rm = *room;
+// End the running game and wait for everyone to come back (their games restart and rejoin by name), then start
+// from state (empty: the game starts over).
+void beginReload(Room &rm, std::vector<uint8_t> state, uint32_t frame) {
     rm.inGame = false;
     rm.reloading = true;
     rm.reloadStartMs = enet_time_get();
     rm.reloadState = std::move(state);
     rm.frames.clear();
     rm.checksums.clear();
+    rm.saveReports.clear();
     rm.reloadExpect = rm.humanMask; // the people playing now restart and come back
     // The players leave the room (their games restart); those who waited stay, already in their seats.
     std::vector<uint8_t> stay;
@@ -461,6 +473,8 @@ void onReloadState(Client &c, PbNetReader &r) {
         }
     }
     rm.members = stay;
+    rm.lobbyContinuing = rm.continuing;
+    rm.lobbySavedName = rm.savedName;
     rm.continuing = true;
     rm.slotOwner.fill(PB_NET_PORT_CPU);
     std::copy(rm.settings.chars, rm.settings.chars + PB_NET_MAX_PLAYERS, rm.slotChar.begin());
@@ -474,6 +488,35 @@ void onReloadState(Client &c, PbNetReader &r) {
     logf("room %s: reloading from the save point at frame %u (%zu bytes); waiting for ports 0x%x", rm.code.c_str(),
          frame, rm.reloadState.size(), rm.reloadExpect);
     if (!rm.members.empty()) sendRoomState(rm);
+}
+
+// A player's game reached a save point. With restarting set (someone waits to rejoin), the first one there
+// decides: the others' copies (identical in lockstep) arrive after the room moved on. Otherwise, once every
+// player's state agrees, it is the point a desync restarts from.
+void onSavePoint(Client &c, PbNetReader &r) {
+    Room *room = c.room;
+    const uint32_t frame = pbr_u32(&r);
+    const uint8_t restarting = pbr_u8(&r);
+    const uint16_t size = pbr_u16(&r);
+    std::vector<uint8_t> state(size <= PB_NET_MAX_CONTINUE_STATE ? size : 0);
+    pbr_bytes(&r, state.data(), state.size());
+    if (r.error || size == 0 || size > PB_NET_MAX_CONTINUE_STATE) {
+        return sendError(c, PB_ERR_BAD_MESSAGE, "malformed SAVE_POINT");
+    }
+    if (!room || !room->inGame || room->waiting.count(c.id)) return;
+    if (restarting) return beginReload(*room, std::move(state), frame);
+    auto &reports = room->saveReports[frame];
+    reports[c.id] = std::move(state);
+    if (reports.size() < playingCount(*room)) return;
+    bool agree = true;
+    for (const auto &[id, s] : reports) agree &= s == reports.begin()->second;
+    if (agree) {
+        room->recoveryState = reports.begin()->second;
+        room->desyncRestarts = 0;
+        logf("room %s: save point at frame %u agreed; desyncs restart from here", room->code.c_str(), frame);
+    }
+    // (Disagreeing states also show up as a checksum desync, which restarts from the previous agreed point.)
+    room->saveReports.erase(room->saveReports.begin(), room->saveReports.upper_bound(frame));
 }
 
 void onHello(Client &c, PbNetReader &r) {
@@ -583,6 +626,7 @@ void onStartGame(Client &c, PbNetReader &r) {
         for (uint8_t owner : s.portOwner) ownsPort |= owner == id;
         if (!ownsPort) return sendError(c, PB_ERR_BAD_SETTINGS, "every player in the room needs a port");
     }
+    room->desyncRestarts = 0;
     startGame(*room, s, state);
 }
 
@@ -748,7 +792,20 @@ void onChecksum(Client &c, PbNetReader &r) {
     pbw_u8(&w, PB_MSG_DESYNC);
     pbw_u32(&w, frame);
     broadcastGame(*room, PB_NET_CHANNEL_CONTROL, w);
-    endGame(*room, PB_END_DESYNC, 0xFF);
+    if (room->desyncRestarts >= kMaxDesyncRestarts) {
+        // Restarting from that point didn't help: something there doesn't replay the same. Give up.
+        endGame(*room, PB_END_DESYNC, 0xFF);
+        return;
+    }
+    // Everyone restarts and the game goes on from the last save point they all agreed on.
+    room->desyncRestarts++;
+    pbw_init(&w, buf, sizeof(buf));
+    pbw_u8(&w, PB_MSG_RESTART);
+    pbw_u8(&w, PB_RESTART_DESYNC);
+    broadcastGame(*room, PB_NET_CHANNEL_CONTROL, w);
+    logf("room %s: restarting everyone from the last agreed save point (%zu bytes; restart %d)", room->code.c_str(),
+         room->recoveryState.size(), room->desyncRestarts);
+    beginReload(*room, room->recoveryState, frame);
 }
 
 void onReceive(Client &c, ENetPacket *packet) {
@@ -767,7 +824,7 @@ void onReceive(Client &c, ENetPacket *packet) {
     case PB_MSG_CHOOSE: return onChoose(c, r);
     case PB_MSG_SET_LAYOUT: return onSetLayout(c, r);
     case PB_MSG_SET_CONTINUE: return onSetContinue(c, r);
-    case PB_MSG_RELOAD_STATE: return onReloadState(c, r);
+    case PB_MSG_SAVE_POINT: return onSavePoint(c, r);
     default: return sendError(c, PB_ERR_BAD_MESSAGE, "unknown message type");
     }
 }

@@ -2,8 +2,9 @@
 
 Relays controller input between Party Board players for online play. It never runs game code:
 each frame it collects every human player's controller state, then sends the bundle to everyone
-in the room (lockstep). It also compares periodic checksums from each player and ends the game if
-anyone drifts out of sync.
+in the room (lockstep). It also compares periodic checksums from each player; if anyone drifts out of
+sync, everyone's game restarts from the last save point all players agreed on. A third desync with
+no new agreed save point since the first ends the game.
 
 - Protocol: [`include/netplay/protocol.h`](../include/netplay/protocol.h), shared with the game
 - Transport: [ENet](http://enet.bespin.org/) over UDP, default port **7845**

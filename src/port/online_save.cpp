@@ -183,6 +183,9 @@ void report(const char *what)
 
 extern "C" void partyboard_online_save_turn(int player)
 {
+    if (partyboard_netplay_active()) {
+        partyboard_netplay_turn_starts(player); // flash the taskbar if it's this player's turn and they looked away
+    }
     if (!partyboard_netplay_active() || player < 0 || player > 3 || !begin()) {
         return;
     }
