@@ -7,6 +7,9 @@
 #ifndef __MWERKS__
 #include "game/pad.h"
 #include "port/settings.h"
+#include "port/mp5disc.h"
+#include "game/objsub.h"
+#include "game/object.h"
 #endif
 
 SHARED_SYM s16 GwLanguage = 1;
@@ -264,12 +267,36 @@ void GWBoardWinCountSet(s32 character, s32 board, s32 value)
     GWGameStat.board_win_count[board][character] = value;
 }
 
+#ifdef TARGET_PC
+// The Mario Party 5 ports (mgInfoTbl entries from DLL_m507dll on) keep out of the save's 64-bit minigame
+// masks: they are available whenever an MP5 image is mounted, and Mini-Game mode's custom list marks
+// them for this session only.
+static u8 mp5MgCustom[256];
+
+static BOOL GWMGIsMp5Port(s32 index)
+{
+    s32 i;
+    if (index < 0 || index >= 256) {
+        return FALSE;
+    }
+    for (i = 0; i <= index; i++) {
+        if (mgInfoTbl[i].ovl == 0xFFFF) {
+            return FALSE;
+        }
+    }
+    return mgInfoTbl[index].ovl >= DLL_m507dll;
+}
+#endif
+
 s32 GWMGAvailGet(s32 id)
 {
     s32 word;
     s32 bit;
     id -= 401;
 #ifdef TARGET_PC
+    if (GWMGIsMp5Port(id)) {
+        return partyboard_mp5_available();
+    }
     if ((u32)id < 64U && partyboard_settings_unlock_all_minigames()) {
         return 1;
     }
@@ -289,6 +316,11 @@ void GWMGAvailSet(s32 id)
     s32 word;
     s32 bit;
     id -= 401;
+#ifdef TARGET_PC
+    if (GWMGIsMp5Port(id)) {
+        return;
+    }
+#endif
     word = id >> 5;
     bit = id % 32;
     GWGameStat.mg_avail[word] |= (1 << bit);
@@ -299,6 +331,11 @@ s32 GWMGCustomGet(s32 id)
     s32 word;
     s32 bit;
     id -= 401;
+#ifdef TARGET_PC
+    if (GWMGIsMp5Port(id)) {
+        return mp5MgCustom[id];
+    }
+#endif
     word = id >> 5;
     bit = id % 32;
     if (GWGameStat.mg_custom[word] & (1 << bit)) {
@@ -314,6 +351,12 @@ void GWMGCustomSet(s32 id)
     s32 word;
     s32 bit;
     id -= 401;
+#ifdef TARGET_PC
+    if (GWMGIsMp5Port(id)) {
+        mp5MgCustom[id] = 1;
+        return;
+    }
+#endif
     word = id >> 5;
     bit = id % 32;
     GWGameStat.mg_custom[word] |= (1 << bit);
@@ -324,6 +367,12 @@ void GWMGCustomReset(s32 id)
     s32 word;
     s32 bit;
     id -= 401;
+#ifdef TARGET_PC
+    if (GWMGIsMp5Port(id)) {
+        mp5MgCustom[id] = 0;
+        return;
+    }
+#endif
     word = id >> 5;
     bit = id % 32;
     GWGameStat.mg_custom[word] &= ~(1 << bit);

@@ -818,6 +818,11 @@ void fn_1_AED0(void)
     HuSprGrpMemberSet(lbl_1_data_A0, 0, temp_r28);
     HuSprGrpPosSet(lbl_1_data_A0, lbl_1_bss_2EE, lbl_1_bss_2EC);
     HuSprGrpScaleSet(lbl_1_data_A0, 0.6f, 0.6f);
+#ifdef TARGET_PC
+    if (mgInfoTbl[lbl_1_bss_2F0].ovl >= DLL_m507dll && GWMGAvailGet(lbl_1_bss_2F0 + 401)) {
+        HuSprScaleSet(lbl_1_data_A0, 0, 320.0f / 256.0f, 320.0f / 256.0f); // MP5's pictures are 256x256, MP4's 320x320
+    }
+#endif
     temp_r31 = 0;
     if (mgInfoTbl[lbl_1_bss_2F0].flag & 0x1) {
         temp_r29 = HuSprAnimReadFile(DATA_MAKE_NUM(DATADIR_MGMODE, 0x24));

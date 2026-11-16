@@ -87,11 +87,102 @@ static void *_MessData_MesPtrGet(void *messbank, u32 id)
     }
 }
 
+#ifdef TARGET_PC
+void *partyboard_mp5_mess_get(u32 id);
+#endif
+
 void *MessData_MesPtrGet(void *messdata, u32 id)
 {
+#ifdef TARGET_PC
+    if ((id >> 16) >= 0x100) { // MP5_MESS_BANK
+        return partyboard_mp5_mess_get(id);
+    }
+#endif
     void *bank = MessData_MesDataGet(messdata, id);
     if(bank) {
         return _MessData_MesPtrGet(bank, id);
     }
     return NULL;
 }
+#ifdef TARGET_PC
+#include "game/data.h"
+#include "game/dvd.h"
+#include "game/memory.h"
+#include "port/mp5disc.h"
+#include "port/mp5mess.h"
+#include <stdlib.h>
+#include <string.h>
+
+// Mario Party 5's English text, for the MP5 minigame ports (port/mp5mess.h). messdata_eng.bin is big
+// endian: u32 bankNum, u32 bankOfs[bankNum]; a bank at bankOfs + 4 is u32 num, u32 ofs[num] (from the
+// bank + 4); a message is a 4-byte header, then its text in the same encoding as MP4's.
+static u8 *mp5MessData;
+static u32 mp5MessSize;
+static struct {
+    u32 id;
+    u8 *text;
+} mp5MessCache[256];
+static s32 mp5MessCacheNum;
+
+static u32 Mp5MessU32(u32 ofs)
+{
+    if (ofs + 4 > mp5MessSize) {
+        return 0xFFFFFFFF;
+    }
+    return ((u32)mp5MessData[ofs] << 24) | ((u32)mp5MessData[ofs + 1] << 16) | ((u32)mp5MessData[ofs + 2] << 8)
+        | mp5MessData[ofs + 3];
+}
+
+void *partyboard_mp5_mess_get(u32 id)
+{
+    u32 bank = (id >> 16) - MP5_MESS_BANK;
+    u32 no = id & 0xFFFF;
+    u32 base;
+    u32 start;
+    u32 end;
+    u8 *text;
+    s32 i;
+
+    for (i = 0; i < mp5MessCacheNum; i++) {
+        if (mp5MessCache[i].id == id) {
+            return mp5MessCache[i].text;
+        }
+    }
+    if (!mp5MessData) {
+        void *data;
+        if (!partyboard_mp5_available()) {
+            return NULL;
+        }
+        data = HuDvdDataRead("mp5/mess/messdata_eng.bin");
+        if (!data) {
+            return NULL;
+        }
+        mp5MessSize = DirDataSize;
+        mp5MessData = malloc(mp5MessSize);
+        memcpy(mp5MessData, data, mp5MessSize);
+        HuMemDirectFree(data);
+    }
+    if (bank >= Mp5MessU32(0)) {
+        return NULL;
+    }
+    base = Mp5MessU32(4 + bank * 4) + 4;
+    if (no >= Mp5MessU32(base)) {
+        return NULL;
+    }
+    start = base + 4 + Mp5MessU32(base + 4 + no * 4) + 4;
+    for (end = start; end < mp5MessSize && mp5MessData[end] != 0; end++) {
+    }
+    if (start > mp5MessSize || mp5MessCacheNum >= (s32)(sizeof(mp5MessCache) / sizeof(mp5MessCache[0]))) {
+        return NULL;
+    }
+    // MP4 messages open with code 0x0B where MP5's have their header.
+    text = malloc(end - start + 2);
+    text[0] = 0x0B;
+    memcpy(text + 1, mp5MessData + start, end - start);
+    text[end - start + 1] = 0;
+    mp5MessCache[mp5MessCacheNum].id = id;
+    mp5MessCache[mp5MessCacheNum].text = text;
+    mp5MessCacheNum++;
+    return text;
+}
+#endif

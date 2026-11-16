@@ -6,6 +6,9 @@
 #include "game/object.h"
 #include "game/pad.h"
 #include "game/window.h"
+#ifdef TARGET_PC
+#include "port/mp5mess.h"
+#endif
 
 
 SHARED_SYM MgInfo mgInfoTbl[] = {
@@ -1144,43 +1147,44 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         0, // inst_mess[3]
     },
     {
-        // Night Light Fright, ported from Mario Party 5 (needs an MP5 image, port/mp5disc.h). Keep the MP5
-        // ports after MP4's own minigames so the board, records and saves never see a moved index.
+        // Mario Party 5 ports (they need an MP5 image, port/mp5disc.h; names, instructions and pictures come
+        // from it too). Keep them after MP4's own minigames so the board, records and saves never see a
+        // moved index. Night Light Fright:
         DLL_m507dll, // ovl
         0, // type
-        1, // flag (not in the board's lists)
+        0, // flag
         255, // record_idx
-        MAKE_MESSID(0x17, 0x26), // name_mess (placeholder: no MP5 text yet)
+        MP5_MESS_MGNAME(507), // name_mess
         DATADIR_MP5_M507, // data_dir
-        DATA_MAKE_NUM(DATADIR_INSTPIC, 39), // inst_pic[0] (placeholder)
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 6), // inst_pic[0]
         0, // inst_pic[1]
         0, // inst_pic[2]
-        DATA_MAKE_NUM(DATADIR_INSTPIC, 39), // mg_pic[0] (placeholder)
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 6), // mg_pic[0]
         0, // mg_pic[1]
         0, // mg_pic[2]
-        0, // inst_mess[0]
-        0, // inst_mess[1]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 30), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 31), // inst_mess[1]
         0, // inst_mess[2]
-        0, // inst_mess[3]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 33), // inst_mess[3]
     },
     {
         // Defuse or Lose, ported from Mario Party 5 (2 vs 2).
         DLL_m526dll, // ovl
         2, // type
-        1, // flag (not in the board's lists)
+        0, // flag
         255, // record_idx
-        MAKE_MESSID(0x17, 0x26), // name_mess (placeholder: no MP5 text yet)
+        MP5_MESS_MGNAME(526), // name_mess
         DATADIR_MP5_M526, // data_dir
-        DATA_MAKE_NUM(DATADIR_INSTPIC, 39), // inst_pic[0] (placeholder)
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 27), // inst_pic[0]
         0, // inst_pic[1]
         0, // inst_pic[2]
-        DATA_MAKE_NUM(DATADIR_INSTPIC, 39), // mg_pic[0] (placeholder)
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 27), // mg_pic[0]
         0, // mg_pic[1]
         0, // mg_pic[2]
-        0, // inst_mess[0]
-        0, // inst_mess[1]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 180), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 181), // inst_mess[1]
         0, // inst_mess[2]
-        0, // inst_mess[3]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 183), // inst_mess[3]
     },
     {
         ((u16)DLL_NONE), // ovl

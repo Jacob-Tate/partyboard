@@ -250,6 +250,12 @@ void fn_1_279FC(s32 coinSkipF)
     for (i = 0; i < mgNum; i++) {
         s16 type = mgInfoTbl[i].type;
         if (type >= 0 && type < 9) {
+#ifdef TARGET_PC
+            // Mario Party 5 ports are listed only while an MP5 image is mounted (GWMGAvailGet).
+            if (mgInfoTbl[i].ovl >= DLL_m507dll && !GWMGAvailGet(i + 401)) {
+                continue;
+            }
+#endif
             if (coinSkipF) {
                 s16 ovl = mgInfoTbl[i].ovl;
                 if (ovl == DLL_m408dll || ovl == DLL_m422dll || ovl == DLL_m430dll) {
