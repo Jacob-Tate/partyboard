@@ -515,6 +515,19 @@ void partyboard_autotest_frame_end(void)
             dump_bytes("GWSystem", &GWSystem, sizeof(GWSystem));
             dump_bytes("GWPlayer", GWPlayer, sizeof(GWPlayer));
             dump_bytes("GWPlayerCfg", GWPlayerCfg, sizeof(GWPlayerCfg));
+            if (sChecksumModels) {
+                int i;
+                for (i = 0; i < HU3D_MODEL_MAX; i++) {
+                    HU3DMODEL *m = &Hu3DData[i];
+                    if (m->hsf == NULL) {
+                        continue;
+                    }
+                    fprintf(sChecksumLog, "# model %d attr %08x pos %a %a %a rot %a %a %a scale %a %a %a mot %d %a %a %a %a\n", i,
+                        (unsigned)m->attr, m->pos.x, m->pos.y, m->pos.z, m->rot.x, m->rot.y, m->rot.z, m->scale.x,
+                        m->scale.y, m->scale.z, (int)m->motId, m->motWork.time, m->motWork.speed, m->motWork.start,
+                        m->motWork.end);
+                }
+            }
         }
     }
     if (sAutotest.maxFrames && GlobalCounter >= sAutotest.maxFrames) {

@@ -33,6 +33,9 @@ subs = [
     (r'\bOMOBJ\b', 'omObjData'),
     (r'Hu3DCameraPosGet\(', 'Mp5CameraPosGet('),
     (r'WipeCreate\(([^,]+), WIPE_TYPE_WHITEFADE, ', r'Mp5WipeWhite(\1, '),
+    # m2c drafts: MP5 wipe types by number (5 = PREVTYPE, 6 = WHITEFADE); MP4's enum differs
+    (r'\bWipeCreate\(([^,]+), 5, ', r'WipeCreate(\1, WIPE_TYPE_NORMAL, '),
+    (r'\bWipeCreate\(([^,]+), 6, ', r'Mp5WipeWhite(\1, '),
     (r'HuAudJinglePlay\(MSM_STREAM_JNGL_MG_WIN\)', 'HuAudSStreamPlay(MP5_JINGLE_WIN)'),
     (r'HuAudJinglePlay\(MSM_STREAM_JNGL_MG_DRAW\)', 'HuAudSStreamPlay(MP5_JINGLE_DRAW)'),
 ]
