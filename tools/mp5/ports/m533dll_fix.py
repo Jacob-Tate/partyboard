@@ -86,4 +86,6 @@ rep('void ObjectSetup(void) {', 'static const s16 m533DkMot[10] = { 0, 0, 0, 132
 in_fn('fn_1_4080', '(s32) sp8[var_r31_3]->unk14 == 6', 'Mp5CharNo(sp8[var_r31_3]->unk14) == 6')
 in_fn('fn_1_4080', '(s32) sp8[var_r31_3]->unk14 == 8', 'Mp5CharNo(sp8[var_r31_3]->unk14) == 8')
 s = s.replace('lbl_1_data_50[temp_r29->unk14]', 'lbl_1_data_50[Mp5CharNo(temp_r29->unk14)]')
+# m2c lost the 8-bit mask of MP5's frand8 (clrlwi 24; 13 sites, all scaled by n/255): frand() is 32-bit here
+s = s.replace('(f32) frand()', '(f32) (frand() & 0xFF)')
 open(p, 'w', encoding='utf-8', newline='\n').write(s)
