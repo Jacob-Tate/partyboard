@@ -1454,6 +1454,25 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         MP5_MESSID(MP5_MESSDIR_MGINST, 228), // inst_mess[3]
     },
     {
+        // m519 Mario Mechs (1 vs 3 mech battle), ported from Mario Party 5's m519 m2c draft.
+        DLL_m519dll, // ovl
+        1, // type (1 vs 3)
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(519), // name_mess
+        DATADIR_MP5_M519, // data_dir
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 19), // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 19), // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 125), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 126), // inst_mess[1]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 127), // inst_mess[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 128), // inst_mess[3]
+    },
+    {
         ((u16)DLL_NONE), // ovl
         0, // type
         0, // flag
