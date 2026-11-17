@@ -1347,10 +1347,10 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         255, // record_idx
         MP5_MESS_MGNAME(547), // name_mess
         DATADIR_MP5_M547, // data_dir
-        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 46), // inst_pic[0]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 48), // inst_pic[0]
         0, // inst_pic[1]
         0, // inst_pic[2]
-        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 46), // mg_pic[0]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 48), // mg_pic[0]
         0, // mg_pic[1]
         0, // mg_pic[2]
         MP5_MESSID(MP5_MESSDIR_MGINST, 295), // inst_mess[0]
