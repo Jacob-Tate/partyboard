@@ -191,6 +191,24 @@ static void Hu3DMotionAttrReset(s16 motId, u16 attr)
 
 // Voice panning has no MP4 counterpart.
 #define CharModelVoicePanSet(charNo, pan) ((void)(charNo), (void)(pan))
+// Nor per-character voice volume (MP5 scales that character's later voices with it).
+#define CharModelVoiceVolSet(charNo, vol) ((void)(charNo), (void)(vol))
+
+// MP5 charman.c: each given character (-1 = none) says its "lose" voice, CHARVOICEID(10).
+static void CharLoseVoicePlay(s16 charNo1, s16 charNo2, s16 charNo3, s16 charNo4)
+{
+    s16 charNo[4];
+    s32 i;
+    charNo[0] = charNo1;
+    charNo[1] = charNo2;
+    charNo[2] = charNo3;
+    charNo[3] = charNo4;
+    for (i = 0; i < 4; i++) {
+        if (charNo[i] != -1) {
+            CharFXPlay(charNo[i], MSM_SE_VOICE_MARIO + 10);
+        }
+    }
+}
 
 static void Mp5WipeWhite(s16 mode, s16 duration)
 {
@@ -537,6 +555,15 @@ static void MgTimerKill(MGTIMER *timer)
         MGSeqParamSet(timer->seqId, 2, -1);
     }
     HuMemDirectFree(timer);
+}
+
+// MP5 hides the timer (games call it right before MgTimerKill); here: end the MGSeq countdown display.
+static void MgTimerDispOff(MGTIMER *timer)
+{
+    if (timer->seqId >= 0) {
+        MGSeqParamSet(timer->seqId, 2, -1);
+        timer->seqId = -1;
+    }
 }
 
 static BOOL MgTimerDoneCheck(MGTIMER *timer)
