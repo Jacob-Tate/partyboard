@@ -347,6 +347,11 @@ static const struct {
     { TRUE, 67, 6 }, // jump (m529 Handy Hoppers): MP4's jump with arms up
     { FALSE, 56, 59 }, // waving the flag pole (m529, loops): a rhythmic arm pump
     { FALSE, 58, 20 }, // hit by the flag (m529): knocked back
+    { TRUE, 172, 12 }, // holding the blowpipe ready (m550): carry pose, arms in front
+    { TRUE, 173, 59 }, // blowing a balloon (m550): a rhythmic arm pump
+    { FALSE, 96, 23 }, // winner celebration (m550, loops): MP4's win
+    { FALSE, 128, 20 }, // balloons popped (m550): knocked back
+    { FALSE, 125, 24 }, // falling after the loss (m550, loops): MP4's lose
 };
 
 static s16 Mp5CharMotionCreateData(s16 charNo, u32 dataNum, s32 mp4MotNo)
