@@ -738,6 +738,7 @@ static const s16 mp5SndGrpTbl[][2] = {
     { DLL_m554dll, 74 },
     { DLL_m548dll, 68 },
     { DLL_m542dll, 62 },
+    { DLL_m529dll, 49 },
     { DLL_NONE, -1 },
 };
 
