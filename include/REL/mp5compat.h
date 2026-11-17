@@ -949,6 +949,18 @@ static BOOL omCameraViewCheck(u32 cameraBit)
     return TRUE;
 }
 
+// MP5 hsfmotion: speed / time of one cluster motion of a model (MP4's HU3DMODEL has the same fields and its
+// motion code advances clusterTime by clusterSpeed)
+static void Hu3DMotionClusterSpeedSet(HU3DMODELID modelId, s16 clusterNo, float speed)
+{
+    Hu3DData[modelId].clusterSpeed[clusterNo] = speed;
+}
+
+static void Hu3DMotionClusterTimeSet(HU3DMODELID modelId, s16 clusterNo, float time)
+{
+    Hu3DData[modelId].clusterTime[clusterNo] = time;
+}
+
 #include "REL/mp5seqman.h"
 
 #endif
