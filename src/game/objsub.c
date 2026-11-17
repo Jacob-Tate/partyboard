@@ -1264,6 +1264,25 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         MP5_MESSID(MP5_MESSDIR_MGINST, 303), // inst_mess[3]
     },
     {
+        // Countdown Pound, ported from Mario Party 5's m542 m2c draft (1 vs 1 duel, MP4 type 6 like m554).
+        DLL_m542dll, // ovl
+        6, // type
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(542), // name_mess
+        DATADIR_MP5_M542, // data_dir
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 43), // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 43), // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 270), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 271), // inst_mess[1]
+        0, // inst_mess[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 273), // inst_mess[3]
+    },
+    {
         ((u16)DLL_NONE), // ovl
         0, // type
         0, // flag
