@@ -112,6 +112,29 @@ typedef s16 GAMEMESID;
 #define GameMesMgDrawCreate() MGSeqDrawCreate()
 #define GameMesMgWinnerCreate(c0, c1, c2, c3) MGSeqWinCreate((c0), (c1), (c2), (c3))
 #define GameMesStatGet(id) MGSeqStatGet(id)
+// Raw GameMesCreate(type, sub, charNo1..4) as m2c drafts show it (MP5 GAMEMES_MES_* / GAMEMES_MG_TYPE_*).
+// charNo are MP4-order character numbers already (the ports keep GWPlayerCfg characters), so they pass through.
+// The macro pads the missing trailing arguments with -1.
+static inline s16 Mp5GameMesCreate(s32 type, s32 sub, s32 c0, s32 c1, s32 c2, s32 c3, ...)
+{
+    switch (type) {
+        case 1: // GAMEMES_MES_TIMER: (time, x, y)
+            return MGSeqCreate(MG_SEQ_TYPE_TIMER, sub, c0, c1);
+        case 2: // GAMEMES_MES_MG: start / finish / draw
+            return MGSeqCreate(MG_SEQ_TYPE_AUTO, sub);
+        case 4: // GAMEMES_MES_MG_WINNER
+            if (sub == 2) {
+                return MGSeqCreate(MG_SEQ_TYPE_AUTO, MG_SEQ_WORD_DRAW);
+            }
+            return MGSeqCreate(MG_SEQ_TYPE_WIN, sub, c0, c1, c2, c3);
+        case 14: // GAMEMES_MES_MG_RECORD
+            return MGSeqCreate(MG_SEQ_TYPE_RECORD, sub);
+        default:
+            OSReport("mp5compat: GameMesCreate(%d, %d) is not supported\n", type, sub);
+            return -1;
+    }
+}
+#define GameMesCreate(...) Mp5GameMesCreate(__VA_ARGS__, -1, -1, -1, -1)
 #define GameMesKill(id) MGSeqKill(id)
 #define GameMesClose() MGSeqKillAll()
 
