@@ -801,6 +801,7 @@ loop_11:
             sp14.z = sp20[2][3];
             Hu3DModelPosSetV(temp_r30->unk0, &sp14);
             Hu3DModelRotSetV(temp_r30->unk0, &sp8);
+        Hu3DModelScaleSet(temp_r30->unk0, 1.0f, 1.0f, 1.0f);
             temp_r30->unk4.x = sp14.x;
             temp_r30->unk4.y = sp14.y;
             temp_r30->unk4.z = sp14.z;
@@ -912,6 +913,7 @@ s32 fn_1_3BB0(s32 player) {
         sp14.z = sp20[2][3];
         Hu3DModelPosSetV(temp_r31->unk0, &sp14);
         Hu3DModelRotSetV(temp_r31->unk0, &sp8);
+        Hu3DModelScaleSet(temp_r31->unk0, 1.0f, 1.0f, 1.0f);
         temp_r31->unk4.x = sp14.x;
         temp_r31->unk4.y = sp14.y;
         temp_r31->unk4.z = sp14.z;
@@ -1643,6 +1645,9 @@ loop_9:
         Hu3DModelLayerSet(temp_r31_4->unk0, 5);
         Hu3DMotionSpeedSet(temp_r31_4->unk0, 0.0f);
         Hu3DModelHookSet(lbl_1_bss_A8[var_r29 + 2].unk0, CharModelItemHookGet(lbl_1_bss_14AC.unk4[var_r29].unk2, 1, 0), temp_r31_4->unk0);
+        if (lbl_1_bss_14AC.unk4[var_r29].unk2 == 5) {
+            Hu3DModelScaleSet(temp_r31_4->unk0, 2.5f, 2.5f, 2.5f);
+        }
         temp_r31_5 = &lbl_1_bss_A8[var_r29 + 0x95];
         temp_r31_5->unk0 = Hu3DModelCreate(HuDataSelHeapReadNum(lbl_1_data_8[0x2E], MEMORY_DEFAULT_NUM, HEAP_DATA));
         Hu3DModelAttrSet(temp_r31_5->unk0, 1U);

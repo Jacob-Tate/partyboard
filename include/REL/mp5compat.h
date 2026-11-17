@@ -348,7 +348,7 @@ static const struct {
     { FALSE, 56, 59 }, // waving the flag pole (m529, loops): a rhythmic arm pump
     { FALSE, 58, 20 }, // hit by the flag (m529): knocked back
     { TRUE, 172, 12 }, // holding the blowpipe ready (m550): carry pose, arms in front
-    { TRUE, 173, 59 }, // blowing a balloon (m550): a rhythmic arm pump
+    { TRUE, 173, 12 }, // blowing a balloon (m550): keeps the carry pose (MP4 59, an arm pump, covered his face)
     { FALSE, 96, 23 }, // winner celebration (m550, loops): MP4's win
     { FALSE, 128, 20 }, // balloons popped (m550): knocked back
     { FALSE, 125, 24 }, // falling after the loss (m550, loops): MP4's lose
