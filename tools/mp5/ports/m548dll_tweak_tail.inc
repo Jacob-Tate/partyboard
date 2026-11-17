@@ -2,7 +2,7 @@
 // ---- DK pose tweak panel (see m548dll_tweak_head.inc) ----
 static const char *const sDkTwName[DKTW_N] = { "R hand rot X", "R hand rot Y", "R hand rot Z", "L hand rot X", "L hand rot Y",
     "L hand rot Z", "head raise", "initial head x", "catch head y", "catch head x", "DK head rot X", "DK head rot Y",
-    "DK head rot Z" };
+    "DK head rot Z", "eyes forward", "eyes up", "eyes spread", "eyes size", "eyes rot X", "eyes rot Y", "eyes rot Z" };
 
 // Adds `d` to every value of a rotation track (constant, linear/step pairs or bezier points).
 static void Mp5DkTrackAdd(HSFTRACK *tr, f32 d)
@@ -49,8 +49,12 @@ void Mp5DkTweak(omObjData *obj)
     }
     if (sDkTweak) {
         f32 step = (held & PAD_TRIGGER_L) ? 0.5f : 2.0f;
-        if (sDkSel < 6 || sDkSel >= 10) {
-            step = (held & PAD_TRIGGER_L) ? 1.0f : 5.0f;
+        if (sDkSel < 6 || (sDkSel >= 10 && sDkSel < 13) || sDkSel >= 17) {
+            step = (held & PAD_TRIGGER_L) ? 1.0f : 5.0f; // rotations
+        } else if (sDkSel >= 13 && sDkSel < 16) {
+            step = (held & PAD_TRIGGER_L) ? 0.25f : 1.0f; // eye position
+        } else if (sDkSel == 16) {
+            step = (held & PAD_TRIGGER_L) ? 0.1f : 0.5f; // eye size
         }
         if ((rep & PAD_BUTTON_UP) && sDkSel > 0) {
             sDkSel--;
@@ -65,9 +69,9 @@ void Mp5DkTweak(omObjData *obj)
             sDkTw[sDkSel] += step;
         }
         if (down & PAD_BUTTON_X) {
-            OSReport("DKTWEAK handR=(%.1f,%.1f,%.1f) handL=(%.1f,%.1f,%.1f) raise=%.1f initX=%.1f catchY=%.1f catchX=%.1f head=(%.1f,%.1f,%.1f)\n",
+            OSReport("DKTWEAK handR=(%.1f,%.1f,%.1f) handL=(%.1f,%.1f,%.1f) raise=%.1f initX=%.1f catchY=%.1f catchX=%.1f head=(%.1f,%.1f,%.1f) eyes fwd=%.2f up=%.2f spread=%.2f size=%.2f rot=(%.1f,%.1f,%.1f)\n",
                 sDkTw[0], sDkTw[1], sDkTw[2], sDkTw[3], sDkTw[4], sDkTw[5], sDkTw[6], sDkTw[7], sDkTw[8], sDkTw[9], sDkTw[10],
-                sDkTw[11], sDkTw[12]);
+                sDkTw[11], sDkTw[12], sDkTw[13], sDkTw[14], sDkTw[15], sDkTw[16], sDkTw[17], sDkTw[18], sDkTw[19]);
         }
     }
     MgTimerPauseSet(lbl_1_bss_54, sDkTweak);
@@ -88,24 +92,38 @@ void Mp5DkTweak(omObjData *obj)
         mo = Hu3DMotion[lbl_1_bss_3F0.unk48[p][1]].hsf->motion;
         for (ti = 0; ti < mo->numTracks; ti++) {
             HSFTRACK *tr = &mo->track[ti];
-            if (tr->type == HSF_TRACK_TRANSFORM && tr->channel >= HSF_CHANNEL_ROTX && tr->channel <= HSF_CHANNEL_ROTZ
-                && tr->target < hsf->objectNum) {
-                s32 axis = tr->channel - HSF_CHANNEL_ROTX;
+            if (tr->type == HSF_TRACK_TRANSFORM && tr->target < hsf->objectNum) {
+                s32 ch = tr->channel;
+                s32 axis = ch - HSF_CHANNEL_ROTX;
                 const char *name = hsf->object[tr->target].name;
                 s32 idx = -1;
-                if (strcmp(name, "root_R_hand") == 0) {
-                    idx = axis;
-                } else if (strcmp(name, "root_L_hand") == 0) {
-                    idx = 3 + axis;
-                } else if (strcmp(name, "root_head") == 0) {
-                    idx = 10 + axis;
+                f32 sign = 1.0f;
+                if (ch >= HSF_CHANNEL_ROTX && ch <= HSF_CHANNEL_ROTZ) {
+                    if (strcmp(name, "root_R_hand") == 0) {
+                        idx = axis;
+                    } else if (strcmp(name, "root_L_hand") == 0) {
+                        idx = 3 + axis;
+                    } else if (strcmp(name, "root_head") == 0) {
+                        idx = 10 + axis;
+                    } else if (strcmp(name, "donkey_L_eye") == 0 || strcmp(name, "donkey_R_eye") == 0) {
+                        idx = 17 + axis;
+                    }
+                } else if (strcmp(name, "donkey_L_eye") == 0 || strcmp(name, "donkey_R_eye") == 0) {
+                    if (ch >= HSF_CHANNEL_POSX && ch <= HSF_CHANNEL_POSZ) {
+                        idx = 13 + (ch - HSF_CHANNEL_POSX);
+                        if (idx == 15 && name[6] == 'R') {
+                            sign = -1.0f; // spread: the eyes move apart
+                        }
+                    } else if (ch >= HSF_CHANNEL_SCALEX && ch <= HSF_CHANNEL_SCALEZ) {
+                        idx = 16;
+                    }
                 }
                 if (idx >= 0) {
                     if (!found[p][idx]) {
-                        OSReport("DKTWEAK track for %d: %s axis %d curve %d n %d\n", idx, name, axis, tr->curveType, tr->numKeyframes);
+                        OSReport("DKTWEAK track for %d: %s ch %d curve %d n %d\n", idx, name, ch, tr->curveType, tr->numKeyframes);
                         found[p][idx] = 1;
                     }
-                    Mp5DkTrackAdd(tr, sDkTw[idx] - applied[p][idx]);
+                    Mp5DkTrackAdd(tr, sign * (sDkTw[idx] - applied[p][idx]));
                 }
             }
         }
