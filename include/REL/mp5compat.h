@@ -283,6 +283,14 @@ static void Hu3DShadowMultiPosSet(HuVecF *pos, HuVecF *up, HuVecF *target, s16 c
     Hu3DShadowPosSet(pos, up, target);
 }
 
+static void Hu3DShadowMultiSizeSet(u16 size, s16 cameraBit)
+{
+    (void)cameraBit;
+    Hu3DShadowSizeSet(size);
+}
+
+#define Hu3DShadowMultiColSet(r, g, b, cameraBit) ((void)(r), (void)(g), (void)(b), (void)(cameraBit))
+
 // ---- Characters ------------------------------------------------------------------------------------------
 // MP4 order: Mario, Luigi, Peach, Yoshi, Wario, DK, Daisy, Waluigi. MP5 has all but DK, so those seven use
 // MP5's own motions (same skeletons as MP4's models); DK falls back to an MP4 motion.
