@@ -39,6 +39,13 @@ s = s.replace('*lbl_1_bss_5D2', 'lbl_1_bss_5D2[0]')
 # per-character tables are in MP5 character order (DK borrows Wario's row)
 rep('lbl_1_bss_3F0.unk48[temp_r31]->unk6', 'lbl_1_bss_3F0.unk48[temp_r31][3]')
 s = re.sub(r'lbl_1_data_(0|184|288|424)\[((?:[^\[\]]|\[[^\[\]]*\])*\.unk2)\]', r'lbl_1_data_\1[Mp5CharNo(\2)]', s)
+# the Bowser head is held at the character's hand height (Wario's row for DK); MP4's DK carries it higher
+rep('''        lbl_1_bss_384[var_r31].unk14 = lbl_1_data_0[Mp5CharNo(lbl_1_bss_3F0.unk4[var_r31].unk2)][5];
+''', '''        lbl_1_bss_384[var_r31].unk14 = lbl_1_data_0[Mp5CharNo(lbl_1_bss_3F0.unk4[var_r31].unk2)][5];
+        if (!Mp5CharHasMotions(lbl_1_bss_3F0.unk4[var_r31].unk2)) {
+            lbl_1_bss_384[var_r31].unk14 += 20.0f;
+        }
+''')
 # Motion time drives the game (the pass completes at time 50, the blast at 110...). DK's MP4 stand-in motions
 # have other lengths than MP5's (the carrying pose is 32 frames, MP5's 119), so for DK the motion's time and
 # speed are stretched to MP5's length per state (59, 119, 9; state 3 is the win, state 4 a 19-29 frame loop).

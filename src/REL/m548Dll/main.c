@@ -1340,6 +1340,9 @@ loop_2:
         lbl_1_bss_384[var_r31].unkC = lbl_1_data_0[Mp5CharNo(lbl_1_bss_3F0.unk4[var_r31].unk2)][3];
         lbl_1_bss_384[var_r31].unk10 = lbl_1_data_0[Mp5CharNo(lbl_1_bss_3F0.unk4[var_r31].unk2)][4];
         lbl_1_bss_384[var_r31].unk14 = lbl_1_data_0[Mp5CharNo(lbl_1_bss_3F0.unk4[var_r31].unk2)][5];
+        if (!Mp5CharHasMotions(lbl_1_bss_3F0.unk4[var_r31].unk2)) {
+            lbl_1_bss_384[var_r31].unk14 += 20.0f;
+        }
         var_r31 += 1;
         goto loop_2;
     }
