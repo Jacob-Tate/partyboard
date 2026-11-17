@@ -1473,6 +1473,25 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         MP5_MESSID(MP5_MESSDIR_MGINST, 128), // inst_mess[3]
     },
     {
+        // m523 Beam Team (1 vs 3), ported from Mario Party 5's m523 m2c draft.
+        DLL_m523dll, // ovl
+        1, // type (1 vs 3)
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(523), // name_mess
+        DATADIR_MP5_M523, // data_dir
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 24), // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 24), // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 140), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 141), // inst_mess[1]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 142), // inst_mess[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 143), // inst_mess[3]
+    },
+    {
         ((u16)DLL_NONE), // ovl
         0, // type
         0, // flag
