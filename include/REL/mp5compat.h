@@ -386,6 +386,8 @@ static const struct {
     { FALSE, 128, 20 }, // balloons popped (m550): knocked back
     { FALSE, 125, 24 }, // falling after the loss (m550, loops): MP4's lose
     { FALSE, 79, 75 }, // hanging from the parachute with both hands up (m547): MP4's arms-up cheer
+    { FALSE, 68, 132 }, // mallet held ready (m534 Manic Mallets, loops): stands, one arm raised
+    { FALSE, 69, 72 }, // mallet swing (m534): fist raised
 };
 
 static s16 Mp5CharMotionCreateData(s16 charNo, u32 dataNum, s32 mp4MotNo)
