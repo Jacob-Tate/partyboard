@@ -16,6 +16,7 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <vector>
 #include <functional>
@@ -208,7 +209,8 @@ namespace {
         if (cpus) {
             names += (names.empty() ? "" : " and ") + std::to_string(cpus) + (cpus == 1 ? " CPU" : " CPUs");
         }
-        return names + " - " + save_date(save.updated);
+        const bool older = std::strcmp(save.build, partyboard_netplay_build_id()) != 0;
+        return names + " - " + save_date(save.updated) + (older ? " (older version)" : "");
     }
 
     Rml::String char_name(int character)
@@ -414,7 +416,7 @@ OnlineWindow::OnlineWindow()
                 saves.assign(32, PbOnlineSave {});
                 saves.resize(partyboard_online_save_list(saves.data(), static_cast<int>(saves.size())));
                 if (saves.empty()) {
-                    pane.add_rml("<br/>No interrupted online parties saved on this PC (with this build).");
+                    pane.add_rml("<br/>No interrupted online parties saved on this PC.");
                 }
                 for (size_t i = 0; i < saves.size(); i++) {
                     const std::string path = saves[i].path;
@@ -425,7 +427,24 @@ OnlineWindow::OnlineWindow()
                                             return save && path == save->path;
                                         },
                                     })
-                        .on_pressed([i] { partyboard_netplay_set_continue(&saves[i]); });
+                        .on_pressed([i] {
+                            partyboard_netplay_set_continue(&saves[i]);
+                            if (std::strcmp(saves[i].build, partyboard_netplay_build_id()) != 0) {
+                                push_toast({
+                                    .type = "",
+                                    .title = "Older save",
+                                    .content = "This party was saved by an older version of Party Board. It should "
+                                               "continue fine, but if something goes wrong, finish it on the old version.",
+                                    .duration = std::chrono::seconds(8),
+                                });
+                            }
+                        });
+                }
+                if (std::any_of(saves.begin(), saves.end(), [](const PbOnlineSave &s) {
+                        return std::strcmp(s.build, partyboard_netplay_build_id()) != 0;
+                    })) {
+                    pane.add_rml("<br/>Saves marked (older version) come from an earlier Party Board. They can be "
+                                 "continued, but weren't made by this version.");
                 }
             });
         leftPane.register_control(leftPane.add_select_button({

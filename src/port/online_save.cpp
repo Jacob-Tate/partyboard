@@ -295,8 +295,9 @@ extern "C" int partyboard_online_save_list(PbOnlineSave *out, int max)
             continue;
         }
         PbOnlineSave save;
-        if (partyboard_online_save_load(reinterpret_cast<const char *>(entry.path().u8string().c_str()), &save) && !save.finished && save.hasResume &&
-            std::strcmp(save.build, partyboard_netplay_build_id()) == 0) {
+        // Saves from other builds count too: the state is the game's own party save, which doesn't change between our
+        // builds, and everyone in the room runs the same build anyway (the server checks).
+        if (partyboard_online_save_load(reinterpret_cast<const char *>(entry.path().u8string().c_str()), &save) && !save.finished && save.hasResume) {
             found.push_back(save);
         }
     }

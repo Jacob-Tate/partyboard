@@ -65,7 +65,7 @@ void partyboard_online_save_party_over(void);
 // ---- continuing ----
 // Reads a save file. Returns 1 on success.
 int partyboard_online_save_load(const char *path, PbOnlineSave *out);
-// The saves in <user dir>/online that can be continued with this build (not finished, with a resume point),
+// The saves in <user dir>/online that can be continued (not finished, with a resume point; from any build),
 // newest first. Returns how many were written to `out` (at most `max`).
 int partyboard_online_save_list(PbOnlineSave *out, int max);
 // The next online game this machine hosts is a continue of `path`: it keeps saving into that file.
