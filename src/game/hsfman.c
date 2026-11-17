@@ -377,6 +377,67 @@ void Hu3DLayerHookSet(s16 layer, void (*func)(s16)) {
     layerHook[layer] = func;
 }
 
+// MP5's Hu3DZClear: clear the depth buffer with a far-plane quad (colour writes off) so models drawn afterwards
+// show over everything drawn before, wherever they are.
+static void Hu3DZClear(s16 layerNo) {
+    HU3DCAMERA *cameraP = &Hu3DCamera[Hu3DCameraNo];
+    Mtx44 proj;
+    Mtx modelview;
+    Vec pos;
+    Vec target;
+    Vec up;
+    float z;
+    float h;
+
+    (void)layerNo;
+    C_MTXPerspective(proj, cameraP->fov, cameraP->aspect, cameraP->nnear, cameraP->ffar);
+    GXSetProjection(proj, GX_PERSPECTIVE);
+    GXSetViewport(cameraP->viewportX, cameraP->viewportY, cameraP->viewportW, cameraP->viewportH, cameraP->viewportNear, cameraP->viewportFar);
+    GXSetScissor(cameraP->scissorX, cameraP->scissorY, cameraP->scissorW, cameraP->scissorH);
+    GXClearVtxDesc();
+    GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
+    GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
+    GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0);
+    GXSetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ONE);
+    GXSetTevColorOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, 1U, GX_TEVPREV);
+    GXSetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_KONST);
+    GXSetTevAlphaOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, 1U, GX_TEVPREV);
+    GXSetNumTexGens(0);
+    GXSetNumTevStages(1);
+    GXSetCullMode(GX_CULL_NONE);
+    GXSetAlphaCompare(GX_GEQUAL, 0, GX_AOP_AND, GX_GEQUAL, 0);
+    GXSetZMode(1, GX_ALWAYS, 1);
+    GXSetColorUpdate(0);
+    pos.x = pos.y = pos.z = 0.0f;
+    target.x = target.y = 0.0f;
+    target.z = -100.0f;
+    up.x = up.z = 0.0f;
+    up.y = 1.0f;
+    C_MTXLookAt(modelview, &pos, &up, &target);
+    GXLoadPosMtxImm(modelview, GX_PNMTX0);
+    z = cameraP->ffar - 1.0f;
+    h = z * tanf(cameraP->fov * (3.14159265f / 360.0f));
+    GXBegin(GX_QUADS, GX_VTXFMT0, 4);
+    GXPosition3f32(-h * HU_DISP_ASPECT, -h, -z);
+    GXPosition3f32(h * HU_DISP_ASPECT, -h, -z);
+    GXPosition3f32(h * HU_DISP_ASPECT, h, -z);
+    GXPosition3f32(-h * HU_DISP_ASPECT, h, -z);
+    GXEnd();
+    GXSetColorUpdate(1);
+}
+
+// MP5's Hu3DZClearLayerSet(layerNo): clear the depth buffer at a layer. MP5 has hooks before (0-7) and after
+// (8-15, layer + HU3D_LAYER_HOOK_POST) each layer; MP4 only has the hooks before a layer, so the hook after a
+// layer is installed before the next one (nothing is drawn between them).
+void Hu3DZClearLayerSet(s16 layerNo) {
+    if (layerNo >= HU3D_LAYER_HOOK_POST) {
+        layerNo = layerNo - HU3D_LAYER_HOOK_POST + 1;
+    }
+    if (layerNo < HU3D_LAYER_MAX) {
+        layerHook[layerNo] = Hu3DZClear;
+    }
+}
+
 void Hu3DPauseSet(BOOL arg0) {
     Hu3DPauseF = arg0;
 }

@@ -499,6 +499,7 @@ void Hu3DExec(void);
 void Hu3DAllKill(void);
 void Hu3DBGColorSet(u8 r, u8 g, u8 b);
 void Hu3DLayerHookSet(s16 layerNo, HU3DLAYERHOOK hookFunc);
+void Hu3DZClearLayerSet(s16 layerNo);
 void Hu3DPauseSet(BOOL pauseF);
 void Hu3DNoSyncSet(BOOL noSync);
 s16 Hu3DModelCreate(void *);

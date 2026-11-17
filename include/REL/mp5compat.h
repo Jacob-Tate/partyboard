@@ -352,6 +352,7 @@ static const struct {
     { FALSE, 96, 23 }, // winner celebration (m550, loops): MP4's win
     { FALSE, 128, 20 }, // balloons popped (m550): knocked back
     { FALSE, 125, 24 }, // falling after the loss (m550, loops): MP4's lose
+    { FALSE, 79, 75 }, // hanging from the parachute with both hands up (m547): MP4's arms-up cheer
 };
 
 static s16 Mp5CharMotionCreateData(s16 charNo, u32 dataNum, s32 mp4MotNo)

@@ -616,6 +616,7 @@ EXPORTS
     Hu3DLLightSpotSet
     Hu3DLLightStaticSet
     Hu3DLayerHookSet
+    Hu3DZClearLayerSet
     Hu3DLighInit
     Hu3DLightAllKill
     Hu3DLightSet
@@ -767,6 +768,7 @@ EXPORTS
     HuAudFXEmiterUpDate
     HuAudFXFadeOut
     HuAudFXListnerKill
+    HuAudFXListnerSet
     HuAudFXListnerSetEX
     HuAudFXListnerUpdate
     HuAudFXPanning
