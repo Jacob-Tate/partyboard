@@ -220,6 +220,16 @@ in_fn('fn_1_8FDC', 'void *var_r26;', 'Mtx *var_r26;')
 in_fn('fn_1_8FDC', 'MTXConcat(sp8, sp38, (f32 (*)[4]) var_r26);', 'MTXConcat(sp8, sp38, *var_r26);')
 in_fn('fn_1_8FDC', 'var_r30 += 4;', 'var_r30++;')
 in_fn('fn_1_8FDC', 'var_r26 += 0x30; /* TODO(mp5): byte step? */', 'var_r26++;')
+# flipper hits test the ball's previous position as a Vec on the stack (spC, sp10, sp14 = x, y, z: fn_1_82AC reads
+# prev[0] and prev[1]); m2c split it into scalars, which MSVC lays out in another order (prev[1] was garbage, so
+# the ball slipped through a flipper near its tip): keep them in one array
+a, b = fn_span('fn_1_87B8')
+body = s[a:b].replace('    f32 sp14;\n    f32 sp10;\n    f32 spC;\n', '    f32 spC[3]; // the previous position as a Vec\n')
+body = re.sub(r'\bspC\b(?!\[)', 'spC[0]', body).replace('&spC[0]', 'spC')
+body = re.sub(r'\bsp10\b', 'spC[1]', body)
+body = re.sub(r'\bsp14\b', 'spC[2]', body)
+assert body.count('spC[1]') == 5 and 'f32 spC[3]' in body, body
+s = s[:a] + body + s[b:]
 s = s.replace('(f64) (bitwise f32) *__float_nan', '(f64) NAN').replace('(f64) (bitwise f32) *__float_huge', '(f64) HUGE_VAL')
 s = re.sub(r'(lbl_1_data_(?:290|2D8|31C|3A8|3D0))\[0\]\[([^\]]+)\]', r'\1[\2]', s)
 # `ptr + 0xOFF` on a typed pointer = address of the member at that offset
@@ -269,10 +279,10 @@ for sz, t in (('0x21C0', 'M574Balls'), ('0x198', 'M574Reg'), ('0x4C', 'M574Score
         'sizeof(%s), MEMORY_DEFAULT_NUM);' % t + nl + '    temp_r3->data = temp_r3_2;' + nl + '    memset(temp_r3_2, 0, sizeof(%s));' % t)
 s = 'static double __frsqrte(double x)' + chr(10) + '{' + chr(10) + '    return 1.0 / sqrt(x);' + chr(10) + '}' + chr(10) + chr(10) + s  # MWCC inlined sqrtf (Newton steps on frsqrte)
 # C_VECReflect isn't exported by dol.dll (it would pull aurora_mtx into the link): the Dolphin routine
-REFL = ['static void Mp5VecReflect(Vec *src, Vec *normal, Vec *dst)', '{', '    Vec uI;', '    f32 cosA;', '',
+REFL = ['static void Mp5VecReflect(Vec *src, Vec *normal, Vec *dst)', '{', '    Vec uI, uN;', '    f32 cosA;', '',
         '    uI.x = -src->x;', '    uI.y = -src->y;', '    uI.z = -src->z;', '    VECNormalize(&uI, &uI);',
-        '    cosA = VECDotProduct(&uI, normal);', '    dst->x = 2.0f * normal->x * cosA - uI.x;',
-        '    dst->y = 2.0f * normal->y * cosA - uI.y;', '    dst->z = 2.0f * normal->z * cosA - uI.z;', '}', '', '']
+        '    VECNormalize(normal, &uN);', '    cosA = VECDotProduct(&uI, &uN);', '    dst->x = 2.0f * uN.x * cosA - uI.x;',
+        '    dst->y = 2.0f * uN.y * cosA - uI.y;', '    dst->z = 2.0f * uN.z * cosA - uI.z;', '    VECNormalize(dst, dst);', '}', '', '']
 s = chr(10).join(REFL) + s
 s = s.replace('C_VECReflect(', 'Mp5VecReflect(')
 open(p, 'w', encoding='utf-8').write(s)

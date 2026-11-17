@@ -279,17 +279,19 @@ void fn_1_77D4(s32 team, s32 prize);
 void fn_1_7874(s32 team, s32 prize);
 static void Mp5VecReflect(Vec *src, Vec *normal, Vec *dst)
 {
-    Vec uI;
+    Vec uI, uN;
     f32 cosA;
 
     uI.x = -src->x;
     uI.y = -src->y;
     uI.z = -src->z;
     VECNormalize(&uI, &uI);
-    cosA = VECDotProduct(&uI, normal);
-    dst->x = 2.0f * normal->x * cosA - uI.x;
-    dst->y = 2.0f * normal->y * cosA - uI.y;
-    dst->z = 2.0f * normal->z * cosA - uI.z;
+    VECNormalize(normal, &uN);
+    cosA = VECDotProduct(&uI, &uN);
+    dst->x = 2.0f * uN.x * cosA - uI.x;
+    dst->y = 2.0f * uN.y * cosA - uI.y;
+    dst->z = 2.0f * uN.z * cosA - uI.z;
+    VECNormalize(dst, dst);
 }
 
 static double __frsqrte(double x)
@@ -1193,9 +1195,7 @@ loop_37:
 }
 
 s32 fn_1_87B8(M574Hit *ball, M574Mesh *mesh) {
-    f32 sp14;
-    f32 sp10;
-    f32 spC;
+    f32 spC[3]; // the previous position as a Vec
     f32 sp8;
     M574Line *var_r30;
     f32 temp_f30;
@@ -1215,21 +1215,21 @@ s32 fn_1_87B8(M574Hit *ball, M574Mesh *mesh) {
         }
         if ((s32) ((s32) mesh->unk8 >> 1) == var_r27) {
             var_r30 = mesh->unk20;
-            spC = ball->unk20;
-            sp10 = ball->unk24;
-            sp14 = 0.0f;
+            spC[0] = ball->unk20;
+            spC[1] = ball->unk24;
+            spC[2] = 0.0f;
             var_r28 = 0;
 loop_8:
             if (var_r28 < (s32) mesh->unk1C) {
-                if (!((var_r30->unk24 + ((var_r30->unk18 * spC) + (var_r30->unk1C * sp10))) < 0.0f)) {
+                if (!((var_r30->unk24 + ((var_r30->unk18 * spC[0]) + (var_r30->unk1C * spC[1]))) < 0.0f)) {
                     var_r28 += 1;
                     var_r30++;
                     goto loop_8;
                 }
             }
             if (var_r28 < (s32) mesh->unk1C) {
-                temp_f31 = ((var_r30->unk0 + var_r30->unkC) * 0.5f) - spC;
-                temp_f30 = ((var_r30->unk4 + var_r30->unk10) * 0.5f) - sp10;
+                temp_f31 = ((var_r30->unk0 + var_r30->unkC) * 0.5f) - spC[0];
+                temp_f30 = ((var_r30->unk4 + var_r30->unk10) * 0.5f) - spC[1];
                 if (((temp_f31 * temp_f31) + (temp_f30 * temp_f30)) > 0.0f) {
                     temp_f29 = __frsqrte((temp_f31 * temp_f31) + (temp_f30 * temp_f30));
                     temp_f29_2 = 0.5 * temp_f29 * (3.0 - ((f64) ((temp_f31 * temp_f31) + (temp_f30 * temp_f30)) * (temp_f29 * temp_f29)));
@@ -1240,9 +1240,9 @@ loop_8:
                     var_f28 = (temp_f31 * temp_f31) + (temp_f30 * temp_f30);
                 }
                 if (var_f28 < 300.0f) {
-                    sp10 = (f32) ((f64) sp10 + 40.0);
-                    if (fn_1_82AC(ball, mesh, mesh->unk20, &spC) == 0) {
-                        return fn_1_82AC(ball, mesh, mesh->unk24, &spC);
+                    spC[1] = (f32) ((f64) spC[1] + 40.0);
+                    if (fn_1_82AC(ball, mesh, mesh->unk20, spC) == 0) {
+                        return fn_1_82AC(ball, mesh, mesh->unk24, spC);
                     }
                     return 1;
                 }
