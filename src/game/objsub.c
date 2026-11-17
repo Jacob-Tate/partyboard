@@ -1378,6 +1378,63 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         MP5_MESSID(MP5_MESSDIR_MGINST, 218), // inst_mess[3]
     },
     {
+        // PLACEHOLDER: m528 (476), replaced at merge by the parallel port.
+        DLL_m528dll, // ovl
+        1, // type
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(528), // name_mess
+        0, // data_dir
+        0, // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        0, // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        0, // inst_mess[0]
+        0, // inst_mess[1]
+        0, // inst_mess[2]
+        0, // inst_mess[3]
+    },
+    {
+        // PLACEHOLDER: m544 (477), replaced at merge by the parallel port.
+        DLL_m544dll, // ovl
+        1, // type
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(544), // name_mess
+        0, // data_dir
+        0, // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        0, // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        0, // inst_mess[0]
+        0, // inst_mess[1]
+        0, // inst_mess[2]
+        0, // inst_mess[3]
+    },
+    {
+        // m567 (Quilt for Speed, 1 vs 3), ported from Mario Party 5's m567 m2c draft.
+        DLL_m567dll, // ovl
+        1, // type (1 vs 3)
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(567), // name_mess
+        DATADIR_MP5_M567, // data_dir
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 65), // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 65), // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 150), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 151), // inst_mess[1]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 152), // inst_mess[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 153), // inst_mess[3]
+    },
+    {
         ((u16)DLL_NONE), // ovl
         0, // type
         0, // flag
