@@ -1378,6 +1378,44 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         MP5_MESSID(MP5_MESSDIR_MGINST, 218), // inst_mess[3]
     },
     {
+        // PLACEHOLDER: m528 (476), replaced at merge (ovl is not DLL_NONE: that entry ends the table)
+        DLL_m533dll, // ovl
+        0, // type
+        0, // flag
+        255, // record_idx
+        0, // name_mess
+        0, // data_dir
+        0, // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        0, // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        0, // inst_mess[0]
+        0, // inst_mess[1]
+        0, // inst_mess[2]
+        0, // inst_mess[3]
+    },
+    {
+        // m544 Shy Guy Showdown, ported from Mario Party 5's m544 m2c draft (1 vs 1 duel, MP4 type 6 like m554).
+        DLL_m544dll, // ovl
+        6, // type
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(544), // name_mess
+        DATADIR_MP5_M544, // data_dir
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 45), // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 45), // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 280), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 281), // inst_mess[1]
+        0, // inst_mess[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 283), // inst_mess[3]
+    },
+    {
         ((u16)DLL_NONE), // ovl
         0, // type
         0, // flag

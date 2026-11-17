@@ -175,5 +175,6 @@ DATADIR(MP5_M545, "mp5/data/m545.bin")
 DATADIR(MP5_M550, "mp5/data/m550.bin")
 DATADIR(MP5_M547, "mp5/data/m547.bin")
 DATADIR(MP5_M533, "mp5/data/m533.bin")
+DATADIR(MP5_M544, "mp5/data/m544.bin")
 DATADIR(MP5_DK, "mp5dk/data/teresa.bin") // optional DK mod (port/mp5disc.h): DK's <char>.bin
 DATADIR(MP5_DKMOT, "mp5dk/data/teresamot.bin") // and <char>mot.bin
