@@ -536,6 +536,13 @@ SettingsWindow::SettingsWindow(bool prelaunch)
                 pane.clear();
                 pane.add_text("Open controller binding configuration.");
             });
+        leftPane.register_control(
+            leftPane.add_button("Test Button Icons").on_pressed([this] { push(std::make_unique<GlyphTestWindow>()); }), rightPane,
+            [](Pane &pane) {
+                pane.clear();
+                pane.add_text("Shows each button the game asks for, drawn in the Button Icons style, and waits for you to press "
+                              "it, to check which of your controller's buttons each picture is.");
+            });
         config_bool_select(leftPane, rightPane, getSettings().game.allowBackgroundInput,
             {
                 .key = "Allow Background Input",

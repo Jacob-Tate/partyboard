@@ -6,6 +6,8 @@
 
 #include <pad.h>
 
+#include <vector>
+
 namespace partyboard::ui {
 
 class ControllerConfigWindow : public Window {
@@ -52,6 +54,35 @@ private:
     int mPendingKeyAxis = -1;
     bool mRumbleTestActive = false;
     int mRumbleTestPort = -1;
+};
+
+// Button icon test: shows each game button's picture (as the Button Icons setting draws it for this controller) and
+// waits for you to press the button you think it is; the result names the physical button it really is.
+class GlyphTestWindow : public Window {
+public:
+    GlyphTestWindow();
+
+    void update() override;
+    void hide(bool close) override;
+
+private:
+    void start();
+    void stop(bool finished);
+    void skip();
+    void poll();
+    void render();
+    bool capturing() const { return mRunning || mSuppressUntilNeutral; }
+
+    class Pane *mRightPane = nullptr;
+    bool mRunning = false;
+    bool mHeld[4] = {};
+    bool mDirty = true;
+    bool mSuppressUntilNeutral = false;
+    bool mFinished = false;
+    int mStep = 0;
+    int mPort = 0;
+    Rml::String mNote;
+    std::vector<Rml::String> mResults;
 };
 
 } // namespace partyboard::ui

@@ -1246,9 +1246,8 @@ int family_glyph(int seat, PbIconFamily family, GcInput in)
     return family == PB_FAMILY_KEYBOARD ? key_glyph_id(port, in) : family_ctl(port, family, in);
 }
 
-PbIconFamily auto_family(int seat)
+PbIconFamily auto_family_local(int port)
 {
-    const int port = local_port(seat);
     if (touch_pad_shown() && port == touch_pad_port()) {
         // N58: the last input was a touch on the on-screen pad, which plays this port
         return PB_FAMILY_TOUCH;
@@ -1284,6 +1283,11 @@ PbIconFamily auto_family(int seat)
         default:
             return PB_FAMILY_XBOX;
     }
+}
+
+PbIconFamily auto_family(int seat)
+{
+    return auto_family_local(local_port(seat));
 }
 
 // PB_ICON_FAMILY (test hook): forces the family Auto picks, e.g. "xbox", for runs without that controller.
@@ -1341,7 +1345,7 @@ void shot_on_first_icon(int entry)
 
 extern "C" {
 
-PbIconFamily pb_button_icons_family(int port)
+static PbIconFamily family_by_setting(int port, bool local)
 {
     switch (partyboard::getSettings().game.buttonIcons.getValue()) {
         case PB_ICONS_PLAYSTATION:
@@ -1360,7 +1364,17 @@ PbIconFamily pb_button_icons_family(int port)
     if (forced_family() >= 0) {
         return static_cast<PbIconFamily>(forced_family());
     }
-    return auto_family(port);
+    return local ? auto_family_local(port) : auto_family(port);
+}
+
+PbIconFamily pb_button_icons_family(int port)
+{
+    return family_by_setting(port, false);
+}
+
+PbIconFamily pb_button_icons_family_for_local_port(int port)
+{
+    return family_by_setting(port, true);
 }
 
 const char *pb_button_icons_family_name(PbIconFamily family)
@@ -1448,6 +1462,15 @@ int pb_button_icons_glyph_for_entry_family(int port, PbIconFamily family, int en
         return family == PB_FAMILY_KEYBOARD ? PB_GLYPH_NONE : default_ctl(in);
     }
     return family_glyph(port, family, in);
+}
+
+int pb_button_icons_glyph_for_local_port(int port, PbIconFamily family, int entry)
+{
+    const GcInput in = gc_input_for_entry(entry);
+    if (in == GC_NONE || family <= PB_FAMILY_GAMECUBE || family >= PB_FAMILY_COUNT) {
+        return PB_GLYPH_NONE;
+    }
+    return family == PB_FAMILY_KEYBOARD ? key_glyph_id(port, in) : family_ctl(port, family, in);
 }
 
 int pb_button_icons_glyph_is_key(int glyph)

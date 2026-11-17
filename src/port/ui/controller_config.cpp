@@ -7,6 +7,10 @@
 #include "number_button.hpp"
 #include "pane.hpp"
 
+#include "port/button_icons.h"
+
+#include <aurora/rmlui.hpp>
+
 
 #include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_keyboard.h>
@@ -14,6 +18,11 @@
 #include <fmt/format.h>
 
 #include <array>
+#include <cstdio>
+#include <map>
+#include <optional>
+#include <span>
+#include <string_view>
 #include <string>
 #include <utility>
 #include <vector>
@@ -1120,4 +1129,271 @@ void ControllerConfigWindow::stop_rumble_test()
     mRumbleTestPort = -1;
 }
 
+
+// ---------------------------------------------------------------------------------------------------- icon test
+
+namespace {
+
+    struct GlyphStep {
+        const char *name; // the GameCube button
+        int entry; // its message icon (button_icons.h)
+    };
+    constexpr GlyphStep kGlyphSteps[] = { { "A", 2 }, { "B", 3 }, { "X", 4 }, { "Y", 5 }, { "L", 8 }, { "R", 6 }, { "Z", 11 }, { "Start", 12 } };
+    constexpr int kGlyphStepCount = sizeof(kGlyphSteps) / sizeof(kGlyphSteps[0]);
+
+    // "pbglyph://<family>/<glyph>": a glyph in a family's art, for <img> in the test page.
+    std::optional<aurora::rmlui::RuntimeTexture> serve_glyph(std::string_view source)
+    {
+        static std::map<std::pair<int, int>, std::vector<u8>> cache;
+        const std::string text(source);
+        int family = 0, glyph = 0;
+        if (std::sscanf(text.c_str(), "pbglyph://%d/%d", &family, &glyph) != 2) {
+            return std::nullopt;
+        }
+        constexpr int kSize = 128;
+        auto &px = cache[{ family, glyph }];
+        if (px.empty()) {
+            px.resize(static_cast<size_t>(kSize) * kSize * 4);
+            if (pb_button_icons_glyph_rgba_sized(static_cast<PbIconFamily>(family), glyph, kSize, px.data()) != 0) {
+                cache.erase({ family, glyph });
+                return std::nullopt;
+            }
+        }
+        aurora::rmlui::RuntimeTexture tex;
+        tex.width = kSize;
+        tex.height = kSize;
+        tex.rgba8 = std::as_bytes(std::span<const u8>(px));
+        tex.generateMipmaps = true;
+        return tex;
+    }
+
+    bool port_connected(int port)
+    {
+        return PADGetIndexForPort(static_cast<u32>(port)) >= 0;
+    }
+
+    // The button / trigger of `port` that is down (sticks are ignored: drift would flood the test). Returns false if
+    // none; else *glyph is its icon glyph id (PB_GLYPH_NONE if it has none) and *name its label.
+    bool pressed_input(int port, int *glyph, Rml::String *name)
+    {
+        // Read SDL directly and only the standard buttons: some devices report extra "misc" buttons as held, which
+        // PADGetNativeButtonPressed (first one down) would return instead of the real press.
+        SDL_Gamepad *gamepad = gamepad_for_port(port);
+        if (gamepad == nullptr) {
+            return false;
+        }
+        for (int b = SDL_GAMEPAD_BUTTON_SOUTH; b <= SDL_GAMEPAD_BUTTON_DPAD_RIGHT; ++b) {
+            if (SDL_GetGamepadButton(gamepad, static_cast<SDL_GamepadButton>(b))) {
+                *name = native_button_name(gamepad, static_cast<u32>(b));
+                *glyph = pb_button_icons_glyph_for_native_button(b);
+                return true;
+            }
+        }
+        for (const SDL_GamepadAxis axis : { SDL_GAMEPAD_AXIS_LEFT_TRIGGER, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER }) {
+            if (SDL_GetGamepadAxis(gamepad, axis) > 16000) {
+                *name = SDL_GetGamepadStringForAxis(axis);
+                *glyph = pb_button_icons_glyph_for_native_axis(axis);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool all_neutral()
+    {
+        int glyph;
+        Rml::String name;
+        for (int p = 0; p < PAD_CHANMAX; ++p) {
+            if (port_connected(p) && pressed_input(p, &glyph, &name)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+} // namespace
+
+GlyphTestWindow::GlyphTestWindow()
+{
+    static bool registered = false;
+    if (!registered) {
+        registered = true;
+        aurora::rmlui::register_texture_provider("pbglyph", serve_glyph);
+    }
+    listen(
+        Rml::EventId::Keydown,
+        [this](Rml::Event &event) {
+            if (capturing()) {
+                event.StopPropagation();
+            }
+        },
+        true);
+
+    add_tab("Button Icons", [this](Rml::Element *content) {
+        auto &leftPane = add_child<Pane>(content, Pane::Type::Controlled);
+        auto &rightPane = add_child<Pane>(content, Pane::Type::Uncontrolled);
+        mRightPane = &rightPane;
+        auto show = [this](Pane &) { render(); };
+        leftPane.add_section("Test");
+        leftPane.register_control(leftPane.add_button("Start Test").on_pressed([this] { start(); }), rightPane, show);
+        leftPane.register_control(leftPane.add_button("Skip This Button").on_pressed([this] { skip(); }), rightPane, show);
+        leftPane.register_control(leftPane.add_button("Stop Test").on_pressed([this] { stop(false); }), rightPane, show);
+        mDirty = true;
+    });
+}
+
+void GlyphTestWindow::hide(bool close)
+{
+    mRunning = false;
+    Window::hide(close);
+}
+
+void GlyphTestWindow::start()
+{
+    mResults.clear();
+    mNote.clear();
+    mStep = 0;
+    mFinished = false;
+    mRunning = true;
+    mPort = 0;
+    for (int p = 0; p < PAD_CHANMAX; ++p) {
+        int glyph;
+        Rml::String name;
+        mHeld[p] = port_connected(p) && pressed_input(p, &glyph, &name);
+        if (port_connected(p) && mPort == 0 && p > 0 && !port_connected(0)) {
+            mPort = p;
+        }
+    }
+    mDirty = true;
+}
+
+void GlyphTestWindow::stop(bool finished)
+{
+    if (mRunning) {
+        mSuppressUntilNeutral = true; // the press that ended it must not also navigate the menu
+    }
+    mRunning = false;
+    mFinished = finished;
+    mDirty = true;
+}
+
+void GlyphTestWindow::skip()
+{
+    if (!mRunning) {
+        return;
+    }
+    mResults.push_back(fmt::format("{}: skipped", kGlyphSteps[mStep].name));
+    mNote.clear();
+    if (++mStep >= kGlyphStepCount) {
+        stop(true);
+    }
+    mDirty = true;
+}
+
+void GlyphTestWindow::poll()
+{
+    if (mSuppressUntilNeutral && all_neutral()) {
+        mSuppressUntilNeutral = false;
+    }
+    if (!mRunning) {
+        return;
+    }
+    if (keyboard_escape_pressed()) {
+        stop(false);
+        return;
+    }
+    for (int p = 0; p < PAD_CHANMAX; ++p) {
+        int pressed = PB_GLYPH_NONE;
+        Rml::String name;
+        const bool down = port_connected(p) && pressed_input(p, &pressed, &name);
+        // a new press only: ignore what was already down (e.g. the press that started the test)
+        const bool isNew = down && !mHeld[p];
+        mHeld[p] = down;
+        if (!isNew) {
+            continue;
+        }
+        const PbIconFamily family = pb_button_icons_family_for_local_port(p);
+        mPort = p;
+        const int expected = pb_button_icons_glyph_for_local_port(p, family, kGlyphSteps[mStep].entry);
+        if (pressed == expected && pressed != PB_GLYPH_NONE) {
+            mResults.push_back(fmt::format("{}: your &quot;{}&quot; button", kGlyphSteps[mStep].name, name));
+            mNote.clear();
+            if (++mStep >= kGlyphStepCount) {
+                stop(true);
+            }
+        }
+        else {
+            Rml::String as = "a button the game doesn't show a picture for";
+            for (const GlyphStep &step : kGlyphSteps) {
+                if (pressed != PB_GLYPH_NONE && pb_button_icons_glyph_for_local_port(p, family, step.entry) == pressed) {
+                    as = fmt::format("the game's {} button", step.name);
+                    break;
+                }
+            }
+            mNote = fmt::format("You pressed &quot;{}&quot;, which is {}. Try another.", name, as);
+        }
+        mDirty = true;
+        return;
+    }
+}
+
+void GlyphTestWindow::update()
+{
+    poll();
+    Window::update();
+    if (mDirty && mRightPane != nullptr && visible()) {
+        mDirty = false;
+        render();
+    }
+}
+
+void GlyphTestWindow::render()
+{
+    if (mRightPane == nullptr) {
+        return;
+    }
+    Pane &pane = *mRightPane;
+    pane.clear();
+    int connected = -1;
+    for (int p = 0; p < PAD_CHANMAX && connected < 0; ++p) {
+        connected = port_connected(p) ? p : -1;
+    }
+    if (connected < 0) {
+        pane.add_text("No controller detected. Connect one to test its button icons.");
+        return;
+    }
+    const int port = mRunning ? mPort : connected;
+    const PbIconFamily family = pb_button_icons_family_for_local_port(port);
+    if (family == PB_FAMILY_GAMECUBE) {
+        pane.add_text("Button Icons is set to GameCube, which keeps the game's own pictures. Pick another style to test.");
+        return;
+    }
+    if (mRunning) {
+        const GlyphStep &step = kGlyphSteps[mStep];
+        const int glyph = pb_button_icons_glyph_for_local_port(port, family, step.entry);
+        pane.add_rml(fmt::format("Port {} ({} icons). Press the button this picture shows:<br/>"
+                                 "<img src=\"pbglyph://{}/{}\" style=\"width: 96dp; height: 96dp;\"/><br/>"
+                                 "The game calls it {} ({} of {}).",
+            port + 1, pb_button_icons_family_name(family), static_cast<int>(family), glyph, step.name, mStep + 1, kGlyphStepCount));
+        if (!mNote.empty()) {
+            pane.add_rml("<br/>" + mNote);
+        }
+        pane.add_rml(fmt::format("<br/>Listening to port {}: {}. Esc on the keyboard stops the test.", port + 1, current_controller_name(port)));
+    }
+    else {
+        pane.add_rml(fmt::format("Port {} ({} icons). Start the test to be shown each game button's picture in turn. Press the "
+                                 "button on your controller that you think the picture is. It moves on once you press the one the "
+                                 "game really uses, and tells you which of your buttons that is.",
+            port + 1, pb_button_icons_family_name(family)));
+    }
+    if (!mResults.empty()) {
+        Rml::String list = mFinished ? "<br/><br/>Done. The game's buttons are on your controller's:" : "<br/><br/>So far:";
+        for (const Rml::String &line : mResults) {
+            list += "<br/>" + line;
+        }
+        pane.add_rml(list);
+    }
+}
+
 } // namespace partyboard::ui
+

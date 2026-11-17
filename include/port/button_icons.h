@@ -39,6 +39,10 @@ struct AnimData_s;
 
 /* The family whose glyphs pad port `port` (0-3) shows under the current setting. */
 PbIconFamily pb_button_icons_family(int port);
+/* Test tool: the same for this machine's local controller `port` (0-3), with no seat mapping online. */
+PbIconFamily pb_button_icons_family_for_local_port(int port);
+/* The glyph message icon `entry` shows for local controller `port` in `family` (its own bindings); PB_GLYPH_NONE if none. */
+int pb_button_icons_glyph_for_local_port(int port, PbIconFamily family, int entry);
 /* Display name of a family ("Xbox", ...). */
 const char *pb_button_icons_family_name(PbIconFamily family);
 
