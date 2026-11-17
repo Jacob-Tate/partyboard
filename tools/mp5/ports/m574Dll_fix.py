@@ -62,6 +62,12 @@ def bytestep(m):
     return '%s%s = (%s *)((u8 *)%s + %s * 0x%s);' % (m.group(1)[:len(m.group(1)) - len(x)], x, d.group(1), m.group(2), m.group(3), m.group(4))
 s = re.sub(r'(?m)^(\s+\w+) = ((?:\w+->data)|\w+) \+ \((\w+) \* 0x([0-9A-F]+)\);', bytestep, s)
 
+# m2c lost the 16-bit mask of MP5's frand16-style random numbers (clrlwi 16): frand() is 32-bit here
+s = s.replace('(f32) (frand() - 0x8000)', '(f32) ((s32) (frand() & 0xFFFF) - 0x8000)').replace('(f32) frand()', '(f32) (frand() & 0xFFFF)')
+
+# a ball is 0x6C on GC but its M574Hit holds pointers: stride by the real size
+s = s.replace('* 0x6C)', '* sizeof(M574Ball))')
+
 # ---- hand fixes ----------------------------------------------------------------------------------------------
 def fn_span(name):
     m = re.search(r'(?m)^[\w *]+ %s\([^)]*\) \{\n' % name, s)
