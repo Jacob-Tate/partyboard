@@ -1302,7 +1302,7 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         MP5_MESSID(MP5_MESSDIR_MGINST, 198), // inst_mess[3]
     },
     {
-        // m545, ported from Mario Party 5's m545 m2c draft (1 vs 1 duel, MP4 type 6 like m554).
+        // Button Mashers, ported from Mario Party 5's m545 m2c draft (1 vs 1 duel, MP4 type 6 like m554).
         DLL_m545dll, // ovl
         6, // type
         0, // flag
@@ -1319,6 +1319,25 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         MP5_MESSID(MP5_MESSDIR_MGINST, 286), // inst_mess[1]
         0, // inst_mess[2]
         MP5_MESSID(MP5_MESSDIR_MGINST, 288), // inst_mess[3]
+    },
+    {
+        // Merry Poppin', ported from Mario Party 5's m550 m2c draft (1 vs 1 duel, MP4 type 6 like m554).
+        DLL_m550dll, // ovl
+        6, // type
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(550), // name_mess
+        DATADIR_MP5_M550, // data_dir
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 51), // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 51), // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 310), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 311), // inst_mess[1]
+        0, // inst_mess[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 313), // inst_mess[3]
     },
     {
         ((u16)DLL_NONE), // ovl
