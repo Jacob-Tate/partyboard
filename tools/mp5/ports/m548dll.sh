@@ -46,6 +46,18 @@ rep('''        lbl_1_bss_384[var_r31].unk14 = lbl_1_data_0[Mp5CharNo(lbl_1_bss_3
             lbl_1_bss_384[var_r31].unk14 += 20.0f;
         }
 ''')
+# DK's initial hold sits a little further right, and when he catches the head it is held a little higher
+rep('''    lbl_1_bss_44.x = -lbl_1_bss_384->unk10;
+''', '''    lbl_1_bss_44.x = -lbl_1_bss_384->unk10;
+    if (!Mp5CharHasMotions(lbl_1_bss_3F0.unk4[0].unk2)) {
+        lbl_1_bss_44.x += 12.0f;
+    }
+''')
+assert s.count('unkC == 49.0f') == 1
+rep('        if (lbl_1_bss_3F0.unk50[lbl_1_bss_3D0.unk6 ^ 1].unkC == 49.0f) {', '''        if (!Mp5CharHasMotions(lbl_1_bss_3F0.unk4[lbl_1_bss_3D0.unk6 ^ 1].unk2)) {
+            lbl_1_bss_44.y += 12.0f;
+        }
+        if (lbl_1_bss_3F0.unk50[lbl_1_bss_3D0.unk6 ^ 1].unkC == 49.0f) {''')
 # Motion time drives the game (the pass completes at time 50, the blast at 110...). DK's MP4 stand-in motions
 # have other lengths than MP5's (the carrying pose is 32 frames, MP5's 119), so for DK the motion's time and
 # speed are stretched to MP5's length per state (59, 119, 9; state 3 is the win, state 4 a 19-29 frame loop).

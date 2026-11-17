@@ -715,6 +715,9 @@ void fn_1_309C(void) {
             lbl_1_bss_44.x = pos.x + (lbl_1_bss_384[1].unk10 - lbl_1_bss_384[1].unk0);
             lbl_1_bss_44.y = pos.y + (lbl_1_bss_384[1].unk14 - lbl_1_bss_384[1].unk4);
         }
+        if (!Mp5CharHasMotions(lbl_1_bss_3F0.unk4[lbl_1_bss_3D0.unk6 ^ 1].unk2)) {
+            lbl_1_bss_44.y += 12.0f;
+        }
         if (lbl_1_bss_3F0.unk50[lbl_1_bss_3D0.unk6 ^ 1].unkC == 49.0f) {
             lbl_1_bss_3F0.unk50[lbl_1_bss_3D0.unk6 ^ 1].unk4 = 0.0f;
         }
@@ -1503,6 +1506,9 @@ void fn_1_167C(void) {
     Hu3DModelAttrReset(temp_r3, 1U);
     lbl_1_bss_3B4 = Hu3DTexScrollCreate(temp_r3, "m548time");
     lbl_1_bss_44.x = -lbl_1_bss_384->unk10;
+    if (!Mp5CharHasMotions(lbl_1_bss_3F0.unk4[0].unk2)) {
+        lbl_1_bss_44.x += 12.0f;
+    }
     lbl_1_bss_44.y = lbl_1_bss_384->unk14;
     lbl_1_bss_44.z = 0.0f;
     lbl_1_bss_38.x = 0.0f;
