@@ -192,6 +192,10 @@ DLL(m528Dll)
 DLL(m544Dll)
 DLL(m567Dll)
 DLL(m574Dll)
+DLL(m519Dll) // placeholder for the parallel m519 port (index 480); the orchestrator replaces it at merge
+DLL(m523Dll) // placeholder for the parallel m523 port (index 481)
+DLL(m534Dll) // placeholder for the parallel m534 port (index 482)
+DLL(m577Dll)
 #define DLL_m570dll DLL_m570Dll
 #define DLL_m554dll DLL_m554Dll
 #define DLL_m548dll DLL_m548Dll
@@ -205,6 +209,10 @@ DLL(m574Dll)
 #define DLL_m544dll DLL_m544Dll
 #define DLL_m567dll DLL_m567Dll
 #define DLL_m574dll DLL_m574Dll
+#define DLL_m519dll DLL_m519Dll
+#define DLL_m523dll DLL_m523Dll
+#define DLL_m534dll DLL_m534Dll
+#define DLL_m577dll DLL_m577Dll
 #define DLL_modeltestdll DLL_modeltestDll
 #define DLL_messdll DLL_messDll
 #define DLL_mpexdll DLL_mpexDll

@@ -1454,6 +1454,82 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         MP5_MESSID(MP5_MESSDIR_MGINST, 228), // inst_mess[3]
     },
     {
+        // PLACEHOLDER: m519 (480), replaced at merge by the parallel port.
+        DLL_m519dll, // ovl
+        1, // type
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(519), // name_mess
+        0, // data_dir
+        0, // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        0, // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        0, // inst_mess[0]
+        0, // inst_mess[1]
+        0, // inst_mess[2]
+        0, // inst_mess[3]
+    },
+    {
+        // PLACEHOLDER: m523 (481), replaced at merge by the parallel port.
+        DLL_m523dll, // ovl
+        1, // type
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(523), // name_mess
+        0, // data_dir
+        0, // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        0, // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        0, // inst_mess[0]
+        0, // inst_mess[1]
+        0, // inst_mess[2]
+        0, // inst_mess[3]
+    },
+    {
+        // PLACEHOLDER: m534 (482), replaced at merge by the parallel port.
+        DLL_m534dll, // ovl
+        1, // type
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(534), // name_mess
+        0, // data_dir
+        0, // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        0, // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        0, // inst_mess[0]
+        0, // inst_mess[1]
+        0, // inst_mess[2]
+        0, // inst_mess[3]
+    },
+    {
+        // m577 Curvy Curbs (1 vs 3), ported from Mario Party 5's m577 m2c draft.
+        DLL_m577dll, // ovl
+        1, // type (1 vs 3)
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(577), // name_mess
+        DATADIR_MP5_M577, // data_dir
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 75), // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 75), // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 170), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 171), // inst_mess[1]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 172), // inst_mess[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 173), // inst_mess[3]
+    },
+    {
         ((u16)DLL_NONE), // ovl
         0, // type
         0, // flag
