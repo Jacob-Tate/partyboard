@@ -233,6 +233,9 @@ static void Hu3DShadowMultiTPLvlSet(float tpLvl, s16 cameraBit)
     Hu3DShadowTPLvlSet(tpLvl);
 }
 
+// MP5 can tint the shadow (Hu3DShadowColSet); MP4's shadow has a fixed colour, so it stays dark.
+#define Hu3DShadowColSet(r, g, b) ((void)(r), (void)(g), (void)(b))
+
 static void Hu3DShadowMultiPosSet(HuVecF *pos, HuVecF *up, HuVecF *target, s16 cameraBit)
 {
     (void)cameraBit;
@@ -552,6 +555,187 @@ static void MgScoreWinDispSet(s16 gid, BOOL disp)
     else {
         HuSprAttrSet(gid, 0, HUSPR_ATTR_DISPOFF);
     }
+}
+
+static void MgScoreWinColorSet(s16 gid, u8 r, u8 g, u8 b)
+{
+    HuSprColorSet(gid, 0, r, g, b);
+}
+
+// ---- Score digits (MgScore*): MP5 mg/score.c, a row of digit sprites (the unit sprite isn't used) ---------
+
+#define MGSCORE_DIGIT_MAX 7
+
+typedef struct MgScore_s {
+    HuVec2f pos;
+    HuVec2f digitScale;
+    float digitW;
+    u8 r, g, b;
+    s32 value;
+    s32 maxDigit;
+    HUSPRID sprId[MGSCORE_DIGIT_MAX];
+    HUSPRGRPID grpId;
+    BOOL dispF;
+    BOOL validF;
+    BOOL dispLeadZeroF;
+    HUPROCESS *proc;
+} MGSCORE;
+
+static void Mp5ScoreDispUpdate(MGSCORE *score)
+{
+    s32 i, digitNum = 0, value = score->value, digitVal = 1000000, digit;
+    BOOL digitDispF = FALSE;
+    s32 bank[MGSCORE_DIGIT_MAX];
+    float posX;
+
+    if (score->validF) {
+        return;
+    }
+    i = 0;
+    if (value == 0) {
+        if (score->dispLeadZeroF) {
+            for (; i < MGSCORE_DIGIT_MAX; i++, digitNum++) {
+                bank[i] = 0;
+            }
+        } else {
+            bank[i++] = 0;
+            digitNum++;
+        }
+    } else {
+        do {
+            digit = value / digitVal;
+            value -= digit * digitVal;
+            if (digit > 0 || digitDispF || score->dispLeadZeroF) {
+                digitDispF = TRUE;
+                bank[i++] = digit;
+                digitNum++;
+            }
+            digitVal /= 10;
+        } while (digitVal > 0);
+    }
+    for (; i < MGSCORE_DIGIT_MAX; i++) {
+        bank[i] = -1;
+    }
+    posX = score->digitW * (score->maxDigit - digitNum);
+    for (i = 0; i < MGSCORE_DIGIT_MAX; i++) {
+        HuSprPosSet(score->grpId, i, posX, 0.0f);
+        posX += score->digitW;
+        if (bank[i] != -1 && (!score->dispLeadZeroF || i >= MGSCORE_DIGIT_MAX - score->maxDigit)) {
+            HuSprBankSet(score->grpId, i, bank[i]);
+            if (score->dispF) {
+                HuSprAttrReset(score->grpId, i, HUSPR_ATTR_DISPOFF);
+            } else {
+                HuSprAttrSet(score->grpId, i, HUSPR_ATTR_DISPOFF);
+            }
+            HuSprScaleSet(score->grpId, i, score->digitScale.x, score->digitScale.y);
+            HuSprColorSet(score->grpId, i, score->r, score->g, score->b);
+        } else {
+            HuSprAttrSet(score->grpId, i, HUSPR_ATTR_DISPOFF);
+        }
+    }
+    HuSprGrpPosSet(score->grpId, score->pos.x, score->pos.y);
+    score->validF = TRUE;
+}
+
+static void Mp5ScoreMain(void)
+{
+    MGSCORE *score = (MGSCORE *)HuPrcCurrentGet()->property;
+    while (TRUE) {
+        Mp5ScoreDispUpdate(score);
+        HuPrcVSleep();
+    }
+}
+
+static MGSCORE *MgScoreCreate(s32 digitFile, s32 unitFile, BOOL dispLeadZeroF)
+{
+    MGSCORE *score = HuMemDirectMallocNum(HEAP_HEAP, sizeof(MGSCORE), HU_MEMNUM_OVL);
+    ANIMDATA *anim;
+    s32 i;
+
+    (void)unitFile; // no caller uses the unit sprite
+    memset(score, 0, sizeof(*score));
+    score->digitScale.x = score->digitScale.y = 1.0f;
+    score->maxDigit = 5;
+    score->r = 255;
+    score->g = 216;
+    score->b = 21;
+    score->dispF = TRUE;
+    score->dispLeadZeroF = dispLeadZeroF;
+    score->grpId = HuSprGrpCreate(MGSCORE_DIGIT_MAX);
+    anim = HuSprAnimReadFile(digitFile);
+    for (i = 0; i < MGSCORE_DIGIT_MAX; i++) {
+        score->sprId[i] = HuSprCreate(anim, 90, 0); // above MgScoreWin's panel (100)
+        HuSprGrpMemberSet(score->grpId, i, score->sprId[i]);
+    }
+    score->digitW = anim->pat->sizeX;
+    Mp5ScoreDispUpdate(score);
+    score->proc = HuPrcChildCreate(Mp5ScoreMain, 100, 0x1000, 0, HuPrcCurrentGet());
+    score->proc->property = score;
+    return score;
+}
+
+static void MgScoreValueSet(MGSCORE *score, s32 value)
+{
+    score->value = value;
+    score->validF = FALSE;
+}
+
+static void MgScorePosSet(MGSCORE *score, float posX, float posY)
+{
+    score->pos.x = posX;
+    score->pos.y = posY;
+    score->validF = FALSE;
+}
+
+static void MgScoreDigitScaleSet(MGSCORE *score, float scaleX, float scaleY)
+{
+    score->digitScale.x = scaleX;
+    score->digitScale.y = scaleY;
+    score->validF = FALSE;
+}
+
+static void MgScoreColorSet(MGSCORE *score, u8 r, u8 g, u8 b)
+{
+    score->r = r;
+    score->g = g;
+    score->b = b;
+    score->validF = FALSE;
+}
+
+static void MgScoreMaxDigitSet(MGSCORE *score, s32 maxDigit)
+{
+    score->maxDigit = maxDigit;
+    score->validF = FALSE;
+}
+
+static void MgScoreDispOn(MGSCORE *score)
+{
+    score->dispF = TRUE;
+    score->validF = FALSE;
+}
+
+static void MgScoreDispOff(MGSCORE *score)
+{
+    score->dispF = FALSE;
+    score->validF = FALSE;
+}
+
+// ---- Minigame records (GWMgRecordGet/Set): MP4's mg_record[] belongs to MP4's own games and the save, so
+// MP5 ids live in a session-only store (records are not saved) ----------------------------------------------
+
+static u32 mp5MgRecord[16];
+
+static void GWMgRecordSet(s32 id, u32 value)
+{
+    if (_CheckFlag(MP5_PRACTICE_FLAG)) {
+        return;
+    }
+    mp5MgRecord[id] = value;
+}
+
+static u32 GWMgRecordGet(s32 id)
+{
+    return mp5MgRecord[id];
 }
 
 // ---- Camera views (omCameraView*): MP5 objsysobj.c, eased moves of CRot/Center/CZoom (or the M arrays) ----
