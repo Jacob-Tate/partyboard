@@ -17,6 +17,7 @@
 #include <SDL3/SDL_video.h>
 #include "game/object.h" // after enet.h: it pulls in windows.h, which must not come before winsock2
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -292,6 +293,210 @@ static char sError[256];
 static char sNotice[200]; // last rejected lobby request ("Luigi is taken by Bob"); not fatal
 static u32 sRoomStateTime = 0; // enet_time_get() of the last one
 
+// Name of the person on each port when the game started ("" for CPU ports), for in-game name tags.
+static char sPortNames[PB_NET_MAX_PLAYERS][PB_NET_MAX_NAME + 1];
+
+// ---- stutter tracking (NET_STATS from the server, PERF to it; shown by the F2 panel) ----
+
+#define NET_STATS_HISTORY 30 // seconds the panel's "recent" columns cover
+#define NET_STATS_EVENTS 8
+
+typedef struct SeatStats {
+    int known;
+    u16 ping, jitter, loss;
+    u16 late[NET_STATS_HISTORY]; // per second, ring indexed like sStatsHead
+    u16 slow[NET_STATS_HISTORY];
+    u32 lateTotal, slowTotal, stallTotal;
+    u16 lateWorst, slowWorst;
+    // A notable hold-up waits a second for the event log: the PERF that explains it can arrive after it.
+    u16 pendingLateMs, pendingSlowWorst;
+} SeatStats;
+
+static SeatStats sSeatStats[PB_NET_MAX_PLAYERS];
+static int sStatsHead = 0;
+static u32 sStatsSeconds = 0;
+static char sStatsEvents[NET_STATS_EVENTS][160]; // newest at sStatsEventHead - 1
+static int sStatsEventHead = 0;
+static int sStatsEventCount = 0;
+
+static void stats_event(const char *fmt, ...)
+{
+    char *line = sStatsEvents[sStatsEventHead];
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    va_list args;
+    int n = t ? (int)strftime(line, 16, "%H:%M:%S  ", t) : 0;
+    va_start(args, fmt);
+    vsnprintf(line + n, sizeof(sStatsEvents[0]) - (size_t)n, fmt, args);
+    va_end(args);
+    printf("[netstats] %s\n", line + n);
+    fflush(stdout);
+    sStatsEventHead = (sStatsEventHead + 1) % NET_STATS_EVENTS;
+    if (sStatsEventCount < NET_STATS_EVENTS) {
+        sStatsEventCount++;
+    }
+}
+
+static void handle_net_stats(PbNetReader *r)
+{
+    const u8 count = pbr_u8(r);
+    int i, port;
+    sStatsHead = (sStatsHead + 1) % NET_STATS_HISTORY;
+    sStatsSeconds++;
+    for (port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+        sSeatStats[port].late[sStatsHead] = 0;
+        sSeatStats[port].slow[sStatsHead] = 0;
+    }
+    for (i = 0; i < count && !r->error; i++) {
+        const u8 id = pbr_u8(r);
+        const u16 ping = pbr_u16(r), jitter = pbr_u16(r), loss = pbr_u16(r);
+        const u16 late = pbr_u16(r), lateWorst = pbr_u16(r);
+        const u16 slow = pbr_u16(r), stalls = pbr_u16(r), slowWorst = pbr_u16(r);
+        if (r->error) {
+            break;
+        }
+        // A person normally plays one seat; their stats go on the first one they own.
+        for (port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+            SeatStats *st = &sSeatStats[port];
+            const char *name;
+            if (sSettings.portOwner[port] != id || !(sHumanMask & (1 << port))) {
+                continue;
+            }
+            st->known = 1;
+            st->ping = ping;
+            st->jitter = jitter;
+            st->loss = loss;
+            st->late[sStatsHead] = late;
+            st->slow[sStatsHead] = slow;
+            st->lateTotal += late;
+            st->slowTotal += slow;
+            st->stallTotal += stalls;
+            if (lateWorst > st->lateWorst) {
+                st->lateWorst = lateWorst;
+            }
+            if (slowWorst > st->slowWorst) {
+                st->slowWorst = slowWorst;
+            }
+            name = sPortNames[port][0] ? sPortNames[port] : "a player";
+            // Last second's hold-up: their PC if it had slow frames from the second before to this one.
+            if (st->pendingLateMs) {
+                const int slowNear = slow + st->slow[(sStatsHead + NET_STATS_HISTORY - 1) % NET_STATS_HISTORY] +
+                    st->slow[(sStatsHead + NET_STATS_HISTORY - 2) % NET_STATS_HISTORY];
+                const u16 worst = slowWorst > st->pendingSlowWorst ? slowWorst : st->pendingSlowWorst;
+                if (slowNear > 0) {
+                    stats_event("%s (P%d) held everyone up %u ms: slow PC (%d slow frame%s, worst %u ms)", name,
+                        port + 1, st->pendingLateMs, slowNear, slowNear == 1 ? "" : "s", worst);
+                } else {
+                    stats_event("%s (P%d) held everyone up %u ms: connection (ping %u ms, jitter %u ms, loss %u.%u%%)",
+                        name, port + 1, st->pendingLateMs, ping, jitter, loss / 10u, loss % 10u);
+                }
+                st->pendingLateMs = 0;
+            } else if (slowWorst >= 100 && !(late > 0 && (lateWorst >= 50 || late >= 5))) {
+                stats_event("%s (P%d) had a %u ms frame on their PC", name, port + 1, slowWorst);
+            }
+            if (late > 0 && (lateWorst >= 50 || late >= 5)) {
+                st->pendingLateMs = lateWorst;
+                st->pendingSlowWorst = slowWorst;
+            }
+            break;
+        }
+    }
+}
+
+int partyboard_netplay_get_stats(PbNetSeatStats out[PB_NET_MAX_PLAYERS])
+{
+    int port, k;
+    memset(out, 0, sizeof(PbNetSeatStats) * PB_NET_MAX_PLAYERS);
+    if (!sActive) {
+        return 0;
+    }
+    for (port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+        const SeatStats *st = &sSeatStats[port];
+        PbNetSeatStats *o = &out[port];
+        o->human = (sHumanMask >> port) & 1;
+        o->isMe = (sOwnedMask >> port) & 1;
+        o->name = sPortNames[port][0] ? sPortNames[port] : (o->human ? "Player" : "CPU");
+        o->known = st->known;
+        o->pingMs = st->ping;
+        o->jitterMs = st->jitter;
+        o->lossPermille = st->loss;
+        for (k = 0; k < NET_STATS_HISTORY; k++) {
+            o->lateRecent += st->late[k];
+            o->slowRecent += st->slow[k];
+        }
+        o->lateTotal = (int)st->lateTotal;
+        o->lateWorstMs = st->lateWorst;
+        o->slowTotal = (int)st->slowTotal;
+        o->slowWorstMs = st->slowWorst;
+        o->stallTotal = (int)st->stallTotal;
+        if (!o->human) {
+            o->verdict = "";
+        } else if (!st->known) {
+            o->verdict = "...";
+        } else if (o->lateRecent > 0 && o->slowRecent > 0) {
+            o->verdict = "Slow PC";
+        } else if (o->lateRecent > 0) {
+            o->verdict = "Connection";
+        } else if (st->loss >= 20 || st->jitter >= 40) {
+            o->verdict = "Unstable link";
+        } else {
+            o->verdict = "OK";
+        }
+    }
+    return 1;
+}
+
+int partyboard_netplay_stats_seconds(void)
+{
+    return sStatsSeconds < NET_STATS_HISTORY ? (int)sStatsSeconds : NET_STATS_HISTORY;
+}
+
+const char *partyboard_netplay_stats_event(int index)
+{
+    if (index < 0 || index >= sStatsEventCount) {
+        return NULL;
+    }
+    return sStatsEvents[(sStatsEventHead + NET_STATS_EVENTS - 1 - index) % NET_STATS_EVENTS];
+}
+
+// This machine's frame times, reported to the server about once a second (PB_MSG_PERF).
+static u16 sPerfFrames, sPerfSlow, sPerfStalls, sPerfWorst;
+static u32 sPerfWaitMs;
+
+
+static void note_frame_time(double periodMs, double waitMs)
+{
+    const double ownMs = periodMs - waitMs;
+    sPerfFrames++;
+    sPerfWaitMs += (u32)waitMs;
+    if (ownMs >= PB_NET_SLOW_FRAME_MS) {
+        sPerfSlow++;
+        if (ownMs >= 100) {
+            printf("[netstats] frame %u took %.0f ms on this PC\n", sFrame, ownMs);
+            fflush(stdout);
+        }
+    } else if (periodMs >= PB_NET_SLOW_FRAME_MS) {
+        sPerfStalls++; // fine here, but the other players' inputs were late
+    }
+    if (ownMs > sPerfWorst) {
+        sPerfWorst = (u16)(ownMs > 65535 ? 65535 : ownMs);
+    }
+    if (sPerfFrames >= 60 || ownMs >= PB_NET_SLOW_FRAME_MS) { // a slow frame goes out now: it explains a hold-up
+        u8 buf[16];
+        PbNetWriter w;
+        pbw_init(&w, buf, sizeof(buf));
+        pbw_u8(&w, PB_MSG_PERF);
+        pbw_u16(&w, sPerfFrames);
+        pbw_u16(&w, sPerfSlow);
+        pbw_u16(&w, sPerfStalls);
+        pbw_u16(&w, sPerfWorst);
+        pbw_u16(&w, (u16)(sPerfWaitMs > 65535 ? 65535 : sPerfWaitMs));
+        send_writer(PB_NET_CHANNEL_CONTROL, &w);
+        sPerfFrames = sPerfSlow = sPerfStalls = sPerfWorst = 0;
+        sPerfWaitMs = 0;
+    }
+}
+
 static const char *const sCharNames[PB_NET_MAX_CHARS] = { "Mario", "Luigi", "Peach", "Yoshi", "Wario", "Donkey Kong",
     "Daisy", "Waluigi" };
 
@@ -397,6 +602,11 @@ static void handle_packet(const u8 *data, size_t size)
     case PB_MSG_RESTART:
         if (sActive && !sEnded) {
             begin_restart("desync");
+        }
+        break;
+    case PB_MSG_NET_STATS:
+        if (sActive) {
+            handle_net_stats(&r);
         }
         break;
     case PB_MSG_WAITING:
@@ -559,9 +769,6 @@ int partyboard_netplay_begin(const char *server, const char *name, int create, c
     sState = PB_LOBBY_CONNECTING;
     return 1;
 }
-
-// Name of the person on each port when the game started ("" for CPU ports), for in-game name tags.
-static char sPortNames[PB_NET_MAX_PLAYERS][PB_NET_MAX_NAME + 1];
 
 static void finalize_start(void)
 {
@@ -1324,6 +1531,10 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
     NetFrame *slot;
     int waited = 0;
     int port;
+    // Frame timing for the stutter panel: from one call to the next, and how much of it went to waiting here.
+    static Uint64 lastEntry = 0;
+    static double lastWaitMs = 0;
+    Uint64 waitStart;
 
     if (sReloading) {
         // Quitting to restart: the last frames before the window closes need no one else's input.
@@ -1357,6 +1568,14 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
         sPrimed = 1;
     }
 
+    {
+        const Uint64 now = SDL_GetPerformanceCounter();
+        if (lastEntry != 0) {
+            note_frame_time((double)(now - lastEntry) * 1000.0 / (double)SDL_GetPerformanceFrequency(), lastWaitMs);
+        }
+        lastEntry = now;
+        lastWaitMs = 0;
+    }
     if (sFrame % 60 == 0) {
         ensure_local_controllers();
     }
@@ -1409,6 +1628,17 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
             env = getenv("PB_NETPLAY_TEST_DROP");
             dropAt = env && !sReloaded ? atoi(env) : 0;
         }
+        {
+            // PB_NETPLAY_TEST_HITCH=<ms>: this PC stalls that long every 300 frames (stutter panel tests).
+            static int hitchMs = -1;
+            if (hitchMs < 0) {
+                const char *env = getenv("PB_NETPLAY_TEST_HITCH");
+                hitchMs = env ? atoi(env) : 0;
+            }
+            if (hitchMs > 0 && sFrame > 0 && sFrame % 300 == 0) {
+                SDL_Delay((Uint32)hitchMs);
+            }
+        }
         if (desyncAt > 0 && sFrame == (u32)desyncAt) {
             printf("[netplay] test: desyncing at frame %u\n", sFrame);
             GWPlayer[0].coins++;
@@ -1431,6 +1661,7 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
     }
 
     slot = &sRing[sFrame % NET_RING];
+    waitStart = SDL_GetPerformanceCounter();
     while (!(slot->valid && slot->frame == sFrame)) {
         if (waited > 0 && waited % 100 == 0) {
             show_waiting(waited);
@@ -1451,6 +1682,7 @@ u32 partyboard_netplay_pad_read(PADStatus *status)
             return partyboard_netplay_pad_read(status);
         }
     }
+    lastWaitMs = (double)(SDL_GetPerformanceCounter() - waitStart) * 1000.0 / (double)SDL_GetPerformanceFrequency();
     if (sWaitingShown) {
         show_waiting(0);
     }

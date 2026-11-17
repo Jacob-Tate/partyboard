@@ -134,6 +134,26 @@ void partyboard_netplay_shutdown(void);
 // The local controller slot (0 = controller 1) that plays seat `port` on this machine, or -1.
 int partyboard_netplay_local_slot(int port);
 
+// ---- Stutter panel (F2): who is holding the game up ----
+// The server sees every player's input arrive. Each second it reports, per player: ping, jitter and packet
+// loss, how many frames their input arrived last and later than usual for them (everyone else waited:
+// "late"), and their own game's frame times ("slow": frames their PC itself took 25+ ms for). Late with slow
+// frames points at their PC; late without points at their connection.
+typedef struct PbNetSeatStats {
+    int human, isMe, known; // known: the server has reported on this seat
+    const char *name;
+    int pingMs, jitterMs, lossPermille;
+    int lateRecent, lateTotal, lateWorstMs; // recent = the last partyboard_netplay_stats_seconds() seconds
+    int slowRecent, slowTotal, slowWorstMs;
+    int stallTotal; // frames this player's game hitched waiting on someone else
+    const char *verdict; // "OK", "Slow PC", "Connection", "Unstable link", "..." (no data yet), "" (CPU)
+} PbNetSeatStats;
+// Fills one entry per seat; returns 0 (all zero) outside an online game.
+int partyboard_netplay_get_stats(PbNetSeatStats out[4]);
+int partyboard_netplay_stats_seconds(void);
+// Notable stutters, newest first ("12:03:04  Bob (P2) held everyone up 120 ms: slow PC ..."); NULL past the end.
+const char *partyboard_netplay_stats_event(int index);
+
 #ifdef __cplusplus
 }
 #endif

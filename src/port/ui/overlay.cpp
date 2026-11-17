@@ -13,6 +13,7 @@
 #include <dolphin/pad.h>
 #include <port/settings.h>
 #include <port/autotest.h>
+#include <port/netplay.h>
 
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
@@ -29,6 +30,7 @@ namespace {
 </head>
 <body>
     <fps id="fps" />
+    <netstats id="netstats" />
 </body>
 </rml>
 )RML";
@@ -151,6 +153,55 @@ namespace {
         return elem;
     }
 
+    // F2 panel: one row per seat, then the latest notable stutters.
+    Rml::String netstats_rml()
+    {
+        PbNetSeatStats seats[4];
+        if (!partyboard_netplay_get_stats(seats)) {
+            return "<h>Online stutters</h><p class=\"muted\">Shows who is holding the game up during an online game.</p>"
+                   "<p class=\"muted\">F2 to close</p>";
+        }
+        const int secs = partyboard_netplay_stats_seconds();
+        Rml::String out = fmt::format("<h>Online stutters</h><table><tr class=\"head\"><td>Player</td>"
+                                      "<td>Ping</td><td>Jitter</td><td>Loss</td><td>Late {}s</td><td>Late all</td>"
+                                      "<td>Worst</td><td>Slow {}s</td><td>Slow all</td><td>Worst</td><td>Waited</td>"
+                                      "<td>Verdict</td></tr>",
+            secs, secs);
+        for (int port = 0; port < 4; port++) {
+            const PbNetSeatStats &st = seats[port];
+            if (!st.human) {
+                out += fmt::format("<tr class=\"muted\"><td>P{} CPU</td></tr>", port + 1);
+                continue;
+            }
+            const std::string_view verdict = st.verdict;
+            const char *cls = verdict == "Slow PC" || verdict == "Connection" ? "bad" : verdict == "Unstable link" ? "warn" : "good";
+            const Rml::String name = fmt::format("P{} {}{}", port + 1, escape(st.name), st.isMe ? " (you)" : "");
+            if (!st.known) {
+                out += fmt::format("<tr><td>{}</td><td>...</td></tr>", name);
+                continue;
+            }
+            const auto ms = [](int v) { return v > 0 ? fmt::format("{} ms", v) : Rml::String("-"); };
+            out += fmt::format("<tr><td>{}</td><td>{} ms</td><td>{} ms</td><td>{}.{}%</td><td>{}</td><td>{}</td><td>{}</td>"
+                               "<td>{}</td><td>{}</td><td>{}</td><td>{}</td><td class=\"verdict {}\">{}</td></tr>",
+                name, st.pingMs, st.jitterMs, st.lossPermille / 10, st.lossPermille % 10, st.lateRecent, st.lateTotal,
+                ms(st.lateWorstMs), st.slowRecent, st.slowTotal, ms(st.slowWorstMs), st.stallTotal, cls, st.verdict);
+        }
+        out += "</table>";
+        out += "<p class=\"muted\">Late: frames everyone waited for this player's input. Slow: frames their own PC "
+               "took 25+ ms. Late + slow = their PC; late alone = their connection. Waited: their own hitches "
+               "caused by someone else.</p>";
+        bool any = false;
+        for (int i = 0; const char *ev = partyboard_netplay_stats_event(i); i++) {
+            if (!any) {
+                out += "<h2>Recent</h2>";
+                any = true;
+            }
+            out += fmt::format("<p>{}</p>", escape(ev));
+        }
+        out += "<p class=\"muted\">F2 to close. Also written to partyboard.log ([netstats]).</p>";
+        return out;
+    }
+
     void remove_element(Rml::Element *&elem) noexcept
     {
         if (elem == nullptr) {
@@ -205,6 +256,7 @@ Overlay::Overlay()
     : Document(kDocumentSource)
 {
     mFpsCounter = mDocument->GetElementById("fps");
+    mNetStats = mDocument->GetElementById("netstats");
 
     listen(mDocument, Rml::EventId::Focus, [](Rml::Event &) { Log.warn("Overlay received focus"); });
     listen(mDocument, Rml::EventId::Transitionend, [this](Rml::Event &event) {
@@ -261,6 +313,21 @@ void Overlay::update()
             mFpsSumTicks = 0;
             mFpsHavePrevCounter = false;
             mFpsLastUpdate = 0;
+        }
+    }
+
+    if (mNetStats != nullptr) {
+        if (netstats_open()) {
+            const Uint64 now = SDL_GetPerformanceCounter();
+            if (!mNetStats->HasAttribute("open") ||
+                static_cast<double>(now - mNetStatsLastUpdate) >= 0.5 * static_cast<double>(SDL_GetPerformanceFrequency())) {
+                mNetStatsLastUpdate = now;
+                mNetStats->SetInnerRML(netstats_rml());
+            }
+            mNetStats->SetAttribute("open", "");
+        }
+        else if (mNetStats->HasAttribute("open")) {
+            mNetStats->RemoveAttribute("open");
         }
     }
 

@@ -52,10 +52,16 @@ struct Client {
     uint8_t padSize = 0;
     Room *room = nullptr;
     uint32_t lastSentRtt = 0; // the ping the last ROOM_STATE showed
+    // Stutter tracking (NET_STATS). How much later than the first player's this player's input usually arrives
+    // (ms, slow average), and what happened since the last NET_STATS.
+    float lateBaseline = 0.f;
+    uint16_t lateFrames = 0, worstLateMs = 0;
+    uint16_t slowFrames = 0, netStalls = 0, worstFrameMs = 0; // summed PERF reports
 };
 
 struct PendingFrame {
     uint8_t have = 0; // bit per port whose input arrived
+    std::array<uint32_t, PB_NET_MAX_PLAYERS> arrivedMs{}; // when each port's input arrived (enet time)
     std::array<std::array<uint8_t, PB_NET_MAX_PAD_SIZE>, PB_NET_MAX_PLAYERS> pads{};
 };
 
@@ -80,6 +86,7 @@ struct Room {
     uint32_t lastProgressMs = 0;  // when the last frame went out (or the game started)
     uint32_t lastWaitingMs = 0;   // when the last WAITING went out
     uint32_t lastLobbyStateMs = 0; // lobby: when ROOM_STATE (with fresh pings) last went out
+    uint32_t lastStatsMs = 0;      // in game: when NET_STATS last went out
     std::map<uint32_t, PendingFrame> frames;
     std::map<uint32_t, std::map<uint8_t, uint32_t>> checksums;
     // Who played each port in the running game ("" for a CPU), kept for people coming back mid-game, and
@@ -316,6 +323,44 @@ void leaveRoom(Client &c) {
     if (!room->members.empty()) sendRoomState(*room);
 }
 
+// Stutter tracking: a complete frame's inputs arrived at these times. The player whose input came last held everyone
+// else's game up by the gap to the one before. Some players always arrive a little later than others (their game
+// started later, or they are further from the server), so only lateness beyond their usual amount counts.
+void noteLateness(Room &room, const PendingFrame &frame) {
+    struct Arrival {
+        Client *client;
+        uint32_t ms;
+    };
+    std::vector<Arrival> arrivals;
+    for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
+        if (!(room.humanMask & (1 << port))) continue;
+        Client *c = gClients.count(room.settings.portOwner[port]) ? gClients.at(room.settings.portOwner[port]).get() : nullptr;
+        if (!c) continue;
+        auto same = std::find_if(arrivals.begin(), arrivals.end(), [c](const Arrival &a) { return a.client == c; });
+        if (same == arrivals.end()) arrivals.push_back({c, frame.arrivedMs[port]});
+        else same->ms = (std::max)(same->ms, frame.arrivedMs[port]);
+    }
+    if (arrivals.size() < 2) return;
+    uint32_t first = arrivals[0].ms;
+    for (const Arrival &a : arrivals) first = (std::min)(first, a.ms);
+    Arrival *last = &arrivals[0];
+    for (Arrival &a : arrivals) {
+        if (static_cast<int32_t>(a.ms - last->ms) > 0) last = &a;
+    }
+    for (Arrival &a : arrivals) {
+        const float lateness = static_cast<float>(a.ms - first);
+        if (&a == last) {
+            const float extra = lateness - a.client->lateBaseline;
+            if (extra >= PB_NET_LATE_MS) {
+                a.client->lateFrames++;
+                a.client->worstLateMs = static_cast<uint16_t>(std::max<float>(a.client->worstLateMs, (std::min)(extra, 65535.f)));
+            }
+        }
+        // Slow average; a spike only nudges it, so one long hitch doesn't hide the next.
+        a.client->lateBaseline += ((std::min)(lateness, a.client->lateBaseline + PB_NET_LATE_MS) - a.client->lateBaseline) / 8.f;
+    }
+}
+
 // Sends every frame whose inputs are complete, in order.
 void flushFrames(Room &room) {
     for (;;) {
@@ -332,6 +377,7 @@ void flushFrames(Room &room) {
             if (room.humanMask & (1 << port)) pbw_bytes(&w, it->second.pads[port].data(), room.padSize);
         }
         broadcastGame(room, PB_NET_CHANNEL_INPUT, w);
+        noteLateness(room, it->second);
         room.frames.erase(it);
         room.lastProgressMs = enet_time_get();
         room.nextFrame++;
@@ -375,8 +421,14 @@ void startGame(Room &room, PbNetSettings s, const std::vector<uint8_t> &state) {
     room.waiting.clear();
     room.nextFrame = 0;
     room.lastProgressMs = enet_time_get();
+    room.lastStatsMs = room.lastProgressMs;
     room.frames.clear();
     room.checksums.clear();
+    for (uint8_t id : room.members) {
+        Client &m = *gClients.at(id);
+        m.lateBaseline = 0.f;
+        m.lateFrames = m.worstLateMs = m.slowFrames = m.netStalls = m.worstFrameMs = 0;
+    }
 
     std::vector<uint8_t> buf(64 + state.size());
     PbNetWriter w;
@@ -762,10 +814,12 @@ void onInput(Client &c, PbNetReader &r) {
     if (r.error) return sendError(c, PB_ERR_BAD_MESSAGE, "malformed INPUT");
     if (frame < room->nextFrame || frame >= room->nextFrame + kMaxFramesAhead) return;
     PendingFrame &pending = room->frames[frame];
+    const uint32_t now = enet_time_get();
     for (int port = 0; port < PB_NET_MAX_PLAYERS; port++) {
         if (room->settings.portOwner[port] != c.id) continue;
         pbr_bytes(&r, pending.pads[port].data(), room->padSize);
         pending.have |= static_cast<uint8_t>(1 << port);
+        pending.arrivedMs[port] = now;
     }
     if (r.error) return sendError(c, PB_ERR_BAD_MESSAGE, "malformed INPUT");
     flushFrames(*room);
@@ -808,6 +862,52 @@ void onChecksum(Client &c, PbNetReader &r) {
     beginReload(*room, room->recoveryState, frame);
 }
 
+void onPerf(Client &c, PbNetReader &r) {
+    Room *room = c.room;
+    pbr_u16(&r); // frames
+    const uint16_t slow = pbr_u16(&r);
+    const uint16_t stalls = pbr_u16(&r);
+    const uint16_t worst = pbr_u16(&r);
+    pbr_u16(&r); // netWaitMs
+    if (r.error || !room || !room->inGame) return;
+    c.slowFrames = static_cast<uint16_t>((std::min)(c.slowFrames + slow, 65535));
+    c.netStalls = static_cast<uint16_t>((std::min)(c.netStalls + stalls, 65535));
+    c.worstFrameMs = (std::max)(c.worstFrameMs, worst);
+}
+
+// Once a second in game: everyone's connection and who held the game up (see noteLateness, PB_MSG_PERF).
+void sendNetStats(Room &room) {
+    uint8_t buf[8 + PB_NET_MAX_PLAYERS * 32];
+    PbNetWriter w;
+    pbw_init(&w, buf, sizeof(buf));
+    pbw_u8(&w, PB_MSG_NET_STATS);
+    std::vector<Client *> players;
+    for (uint8_t id : room.members) {
+        if (!room.waiting.count(id) && portOf(room, id) >= 0) players.push_back(gClients.at(id).get());
+    }
+    pbw_u8(&w, static_cast<uint8_t>(players.size()));
+    for (Client *c : players) {
+        const ENetPeer *peer = c->peer;
+        pbw_u8(&w, c->id);
+        pbw_u16(&w, static_cast<uint16_t>(std::min<enet_uint32>(peer->roundTripTime, 65535)));
+        pbw_u16(&w, static_cast<uint16_t>(std::min<enet_uint32>(peer->roundTripTimeVariance, 65535)));
+        pbw_u16(&w, static_cast<uint16_t>(std::min<uint64_t>(uint64_t(peer->packetLoss) * 1000 / ENET_PEER_PACKET_LOSS_SCALE, 1000)));
+        pbw_u16(&w, c->lateFrames);
+        pbw_u16(&w, c->worstLateMs);
+        pbw_u16(&w, c->slowFrames);
+        pbw_u16(&w, c->netStalls);
+        pbw_u16(&w, c->worstFrameMs);
+        if (c->lateFrames) {
+            logf("room %s: %s held the game up on %u frame(s), worst %u ms (ping %u, jitter %u; own slow frames %u, worst %u ms)",
+                 room.code.c_str(), c->name.c_str(), c->lateFrames, c->worstLateMs, peer->roundTripTime,
+                 peer->roundTripTimeVariance, c->slowFrames, c->worstFrameMs);
+        }
+        c->lateFrames = c->worstLateMs = c->slowFrames = c->netStalls = c->worstFrameMs = 0;
+    }
+    broadcastGame(room, PB_NET_CHANNEL_CONTROL, w);
+    room.lastStatsMs = enet_time_get();
+}
+
 void onReceive(Client &c, ENetPacket *packet) {
     PbNetReader r;
     pbr_init(&r, packet->data, packet->dataLength);
@@ -825,6 +925,7 @@ void onReceive(Client &c, ENetPacket *packet) {
     case PB_MSG_SET_LAYOUT: return onSetLayout(c, r);
     case PB_MSG_SET_CONTINUE: return onSetContinue(c, r);
     case PB_MSG_SAVE_POINT: return onSavePoint(c, r);
+    case PB_MSG_PERF: return onPerf(c, r);
     default: return sendError(c, PB_ERR_BAD_MESSAGE, "unknown message type");
     }
 }
@@ -843,6 +944,7 @@ void tick() {
             startReloadedIfReady(room);
         }
         ++it;
+        if (room.inGame && now - room.lastStatsMs >= 1000) sendNetStats(room);
         if (room.inGame) {
             const uint32_t waited = now - room.lastProgressMs;
             if (waited >= 500 && now - room.lastWaitingMs >= 500) {

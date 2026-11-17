@@ -19,7 +19,7 @@
 extern "C" {
 #endif
 
-#define PB_NET_PROTOCOL_VERSION 7
+#define PB_NET_PROTOCOL_VERSION 8
 #define PB_NET_DEFAULT_PORT 7845
 #define PB_NET_CHANNEL_CONTROL 0
 #define PB_NET_CHANNEL_INPUT 1
@@ -35,7 +35,9 @@ extern "C" {
 #define PB_NET_KEEP 0xFF           // CHOOSE: leave this field unchanged
 #define PB_NET_CHECKSUM_INTERVAL 60 // clients report a checksum every this many frames
 #define PB_NET_MAX_CONTINUE_STATE 1024 // bytes of saved board state a continued game starts from
-#define PB_NET_RELOAD_TIMEOUT_MS 60000 // a reloading game starts without whoever isn't back by then
+#define PB_NET_RELOAD_TIMEOUT_MS 60000
+#define PB_NET_LATE_MS 17      // an input this much later than its sender's usual timing held the frame up
+#define PB_NET_SLOW_FRAME_MS 25 // a frame that took this long is a visible hitch (60 fps = 16.7 ms) // a reloading game starts without whoever isn't back by then
 
 // FRAME flags
 #define PB_FRAME_RELOAD 0x01 // someone is waiting to rejoin: reload at the next save point
@@ -83,6 +85,11 @@ typedef enum PbNetMsg {
     // with PB_FRAME_RELOAD: the server ends the game, keeps the room for PB_NET_RELOAD_TIMEOUT_MS while everyone
     // restarts and rejoins (seated by name), then starts it from this state by itself.
     PB_MSG_SAVE_POINT = 11,
+    // In game, about once a second: how this machine's own frames went since the last report (for the stutter
+    // panel, never game state). u16 frames, u16 slowFrames (frames this PC itself took over
+    // PB_NET_SLOW_FRAME_MS for), u16 netStalls (frames that hitched because the other players' inputs were
+    // late), u16 worstFrameMs (longest frame not counting network waits), u16 netWaitMs (total time waited).
+    PB_MSG_PERF = 12,
 
     // server -> client
     PB_MSG_WELCOME = 64,     // u8 clientId
@@ -108,6 +115,12 @@ typedef enum PbNetMsg {
     // Restart now and rejoin the room by code and name: the game goes on from the last save point everyone
     // agreed on (or starts over, before the first one). u8 reason (PbNetRestartReason).
     PB_MSG_RESTART = 74,
+    // To the players of a running game, once a second: who is holding the game up. u8 count, count x (u8 clientId,
+    // u16 pingMs, u16 jitterMs (round trip variance), u16 lossPermille, u16 lateFrames (frames whose input from this
+    // player arrived last, at least PB_NET_LATE_MS later than usual for them: everyone else waited on it),
+    // u16 worstLateMs, then the sums of this player's PERF reports since the last NET_STATS: u16 slowFrames,
+    // u16 netStalls, u16 worstFrameMs).
+    PB_MSG_NET_STATS = 75,
 } PbNetMsg;
 
 typedef enum PbNetError {

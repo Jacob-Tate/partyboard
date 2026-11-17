@@ -289,3 +289,92 @@ logo img.outer {
         top: 20dp;
     }
 }
+
+/* F2: online stutter panel */
+netstats {
+    display: none;
+    position: absolute;
+    top: 12dp;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 98;
+    width: 1000dp;
+    max-width: 96%;
+    padding: 14dp 18dp;
+    border: 1dp #009dda;
+    border-radius: 10dp;
+    background-color: rgba(20, 32, 84, 92%);
+    font-size: 14dp;
+    pointer-events: none;
+}
+
+netstats[open] {
+    display: block;
+}
+
+netstats h {
+    display: block;
+    font-size: 15dp;
+    font-weight: bold;
+    text-transform: uppercase;
+    color: #009dda;
+    margin-bottom: 8dp;
+}
+
+netstats h2 {
+    display: block;
+    font-size: 13dp;
+    font-weight: bold;
+    text-transform: uppercase;
+    color: #009dda;
+    margin-top: 10dp;
+    margin-bottom: 4dp;
+}
+
+netstats table {
+    display: table;
+    width: 100%;
+}
+
+netstats tr {
+    display: table-row;
+}
+
+netstats td {
+    display: table-cell;
+    padding: 3dp 14dp 3dp 0;
+    white-space: nowrap;
+}
+
+netstats tr.head td {
+    color: #9fb3d8;
+    font-size: 12dp;
+    border-bottom: 1dp #2d4aa8;
+}
+
+netstats td.verdict {
+    font-weight: bold;
+    padding-right: 0;
+}
+
+netstats td.good {
+    color: #6fd97a;
+}
+
+netstats td.warn {
+    color: #f2c94c;
+}
+
+netstats td.bad {
+    color: #ff6b6b;
+}
+
+netstats p {
+    display: block;
+    margin-top: 4dp;
+}
+
+netstats .muted {
+    opacity: 0.6;
+    font-size: 12dp;
+}

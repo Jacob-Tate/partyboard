@@ -20,6 +20,8 @@ protected:
     bool handle_nav_command(Rml::Event &event, NavCommand cmd) override;
 
     Rml::Element *mFpsCounter = nullptr;
+    Rml::Element *mNetStats = nullptr;
+    Uint64 mNetStatsLastUpdate = 0;
     Rml::Element *mCurrentToast = nullptr;
     Rml::Element *mControllerWarning = nullptr;
     Rml::Element *mMenuNotification = nullptr;

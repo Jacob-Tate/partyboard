@@ -34,6 +34,7 @@ namespace {
     std::vector<std::unique_ptr<Document>> sPassiveDocuments;
     std::deque<Toast> sToasts;
     bool sMenuNotificationRequested = false;
+    bool sNetStatsOpen = false;
 
     // Sometimes gamepads can connect and disconnect quickly, especially during
     // connection negotiation. In this case, we'll receive an _ADDED event for a
@@ -137,6 +138,9 @@ void handle_event(const SDL_Event &event) noexcept
         return;
     }
 
+    if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_F2 && !event.key.repeat) {
+        sNetStatsOpen = !sNetStatsOpen;
+    }
     if (event.type == SDL_EVENT_GAMEPAD_ADDED) {
         auto *gamepad = SDL_GetGamepadFromID(event.gdevice.which);
         if (SDL_GamepadConnected(gamepad)) {
@@ -394,6 +398,11 @@ std::deque<Toast> &get_toasts() noexcept
 void show_menu_notification() noexcept
 {
     sMenuNotificationRequested = true;
+}
+
+bool netstats_open() noexcept
+{
+    return sNetStatsOpen;
 }
 
 bool consume_menu_notification_request() noexcept
