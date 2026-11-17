@@ -113,6 +113,7 @@ struct UserSettings {
     struct {
         ConfigVar<std::string> isoPath;
         ConfigVar<std::string> mp5IsoPath; // optional Mario Party 5 image (port/mp5disc.h)
+        ConfigVar<std::string> mp5DkModPath; // optional extracted "DK in Mario Party 5" mod folder (port/mp5disc.h)
         ConfigVar<DiscVerificationState> isoVerification;
         ConfigVar<std::string> graphicsBackend;
         ConfigVar<bool> skipPreLaunchUI;

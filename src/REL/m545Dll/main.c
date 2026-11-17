@@ -893,7 +893,7 @@ void fn_1_373C(M545Work *work) {
 loop_2:
     if (var_r31 < 2) {
         Hu3DModelObjMtxGet(work->unk3C[var_r31 + 0x24].unk0, lbl_1_bss_C[var_r31].unk54[0], (f32 (*)[4]) lbl_1_bss_C[var_r31].unk20[0]);
-        if (work->unk4[var_r31].unk2 == 5) { lbl_1_bss_C[var_r31].unk20[1][3] += 35.0f; }
+        if (work->unk4[var_r31].unk2 == 5 && !Mp5CharHasMotions(5)) { lbl_1_bss_C[var_r31].unk20[1][3] += 35.0f; }
         lbl_1_bss_C[var_r31].unk14.x = lbl_1_bss_C[var_r31].unk20[0][3];
         lbl_1_bss_C[var_r31].unk14.y = lbl_1_bss_C[var_r31].unk20[1][3];
         lbl_1_bss_C[var_r31].unk14.z = lbl_1_bss_C[var_r31].unk20[2][3];

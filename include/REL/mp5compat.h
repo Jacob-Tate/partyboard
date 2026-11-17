@@ -269,14 +269,21 @@ static void Hu3DShadowMultiPosSet(HuVecF *pos, HuVecF *up, HuVecF *target, s16 c
 // MP4 order: Mario, Luigi, Peach, Yoshi, Wario, DK, Daisy, Waluigi. MP5 has all but DK, so those seven use
 // MP5's own motions (same skeletons as MP4's models); DK falls back to an MP4 motion.
 
+// DK's entries are the optional "DK in Mario Party 5" mod (port/mp5disc.h: DK's MP5 animations in Boo's
+// teresa.bin/teresamot.bin, same layout as mario.bin/mariomot.bin): used only when it is mounted (never online).
 static const s32 mp5CharDir[8] = { DATADIR_MP5_MARIO, DATADIR_MP5_LUIGI, DATADIR_MP5_PEACH, DATADIR_MP5_YOSHI,
-    DATADIR_MP5_WARIO, -1, DATADIR_MP5_DAISY, DATADIR_MP5_WALUIGI };
+    DATADIR_MP5_WARIO, DATADIR_MP5_DK, DATADIR_MP5_DAISY, DATADIR_MP5_WALUIGI };
 static const s32 mp5CharMotDir[8] = { DATADIR_MP5_MARIOMOT, DATADIR_MP5_LUIGIMOT, DATADIR_MP5_PEACHMOT,
-    DATADIR_MP5_YOSHIMOT, DATADIR_MP5_WARIOMOT, -1, DATADIR_MP5_DAISYMOT, DATADIR_MP5_WALUIGIMOT };
+    DATADIR_MP5_YOSHIMOT, DATADIR_MP5_WARIOMOT, DATADIR_MP5_DKMOT, DATADIR_MP5_DAISYMOT, DATADIR_MP5_WALUIGIMOT };
+
+int partyboard_mp5_dk_mod(void);
 
 static BOOL Mp5CharHasMotions(s16 charNo)
 {
-    return charNo >= 0 && charNo < 8 && mp5CharMotDir[charNo] >= 0;
+    if (charNo == 5) {
+        return partyboard_mp5_dk_mod() != 0;
+    }
+    return charNo >= 0 && charNo < 8;
 }
 
 // MP5 character motions also animate the eye texture through attribute tracks that name the attribute by

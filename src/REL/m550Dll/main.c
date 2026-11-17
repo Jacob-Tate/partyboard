@@ -1645,7 +1645,7 @@ loop_9:
         Hu3DModelLayerSet(temp_r31_4->unk0, 5);
         Hu3DMotionSpeedSet(temp_r31_4->unk0, 0.0f);
         Hu3DModelHookSet(lbl_1_bss_A8[var_r29 + 2].unk0, CharModelItemHookGet(lbl_1_bss_14AC.unk4[var_r29].unk2, 1, 0), temp_r31_4->unk0);
-        if (lbl_1_bss_14AC.unk4[var_r29].unk2 == 5) {
+        if (lbl_1_bss_14AC.unk4[var_r29].unk2 == 5 && !Mp5CharHasMotions(5)) {
             Hu3DModelScaleSet(temp_r31_4->unk0, 2.5f, 2.5f, 2.5f);
         }
         temp_r31_5 = &lbl_1_bss_A8[var_r29 + 0x95];

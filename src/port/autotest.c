@@ -156,6 +156,9 @@ int partyboard_autotest_parse(int argc, char *argv[])
         } else if (strcmp(arg, "--mp5-iso") == 0 && next) {
             sAutotest.mp5IsoPath = next;
             i++;
+        } else if (strcmp(arg, "--mp5-dk-mod") == 0 && next) {
+            sAutotest.mp5DkModPath = next;
+            i++;
         } else if (strcmp(arg, "--board") == 0 && next) {
             if (parse_int(next, 0, 5, &value)) {
                 sAutotest.board = value;

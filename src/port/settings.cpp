@@ -62,6 +62,7 @@ UserSettings g_userSettings = {
     .backend = {
         .isoPath {"backend.isoPath", ""},
         .mp5IsoPath {"backend.mp5IsoPath", ""},
+        .mp5DkModPath {"backend.mp5DkModPath", ""},
         .isoVerification {"backend.isoVerification", DiscVerificationState::Unknown},
         .graphicsBackend {"backend.graphicsBackend", "auto"},
         .skipPreLaunchUI {"backend.skipPreLaunchUI", false},
@@ -129,6 +130,7 @@ void registerSettings() {
 
     Register(g_userSettings.backend.isoPath);
     Register(g_userSettings.backend.mp5IsoPath);
+    Register(g_userSettings.backend.mp5DkModPath);
     Register(g_userSettings.backend.isoVerification);
     Register(g_userSettings.backend.graphicsBackend);
     Register(g_userSettings.backend.skipPreLaunchUI);

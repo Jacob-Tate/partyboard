@@ -1125,6 +1125,7 @@ EXPORTS
     partyboard_autotest_next_game
     partyboard_settings_unlock_bowsers_gnarly_party
     partyboard_version_is_pal
+    partyboard_mp5_dk_mod
     partyboard_version_is_ntsc
     partyboard_version_is_usa
     pb_button_art_esp_seat

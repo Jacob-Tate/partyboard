@@ -48,13 +48,14 @@ s = re.sub(r'\n[ ]+temp_r\w+ = \(temp_r\w+ << 0x1[ED]\) - temp_r\w+;', '', s)
 # per-player state words at 0x104 + 4 * player (m2c printed them as a byte offset from the work struct)
 s = re.sub(r'\(&lbl_1_bss_14AC \+ \((.*?) \* 4\)\)->unk100', r'lbl_1_bss_14AC.unk104[\1 - 1]', s)
 
-# DK's MP4 hand hook draws hooked models at a fraction of their size (the blowpipe was a dot in his fist): scale the
-# hooked blowpipe up for DK, and back to 1 where the game unhooks it and drops it in world space at the finish.
-# TODO(mp5 DK): the blowpipe points diagonally down instead of level at the opponent (needs a hooked-model rotation for
-# DK), and in the win pose the balloon (placed at the body hook, a-itemhook-body, in fn_1_D64) covers DK's face.
+# With MP4 stand-in motions DK's hand hook draws hooked models at a fraction of their size (the blowpipe was a dot in
+# his fist): scale the hooked blowpipe up for DK, and back to 1 where the game unhooks it and drops it in world space at
+# the finish. Not with the DK mod's MP5 animations (right size, aimed level, balloon above his head when he wins).
+# TODO(mp5 DK, stand-ins only): the blowpipe points diagonally down instead of level at the opponent, and in the win
+# pose the balloon (placed at the body hook, a-itemhook-body, in fn_1_D64) covers DK's face.
 rep('''        Hu3DModelHookSet(lbl_1_bss_A8[var_r29 + 2].unk0, CharModelItemHookGet(lbl_1_bss_14AC.unk4[var_r29].unk2, 1, 0), temp_r31_4->unk0);
 ''', '''        Hu3DModelHookSet(lbl_1_bss_A8[var_r29 + 2].unk0, CharModelItemHookGet(lbl_1_bss_14AC.unk4[var_r29].unk2, 1, 0), temp_r31_4->unk0);
-        if (lbl_1_bss_14AC.unk4[var_r29].unk2 == 5) {
+        if (lbl_1_bss_14AC.unk4[var_r29].unk2 == 5 && !Mp5CharHasMotions(5)) {
             Hu3DModelScaleSet(temp_r31_4->unk0, 2.5f, 2.5f, 2.5f);
         }
 ''')

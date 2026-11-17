@@ -59,9 +59,10 @@ rep('memcpy(temp_r30->work + (var_r29 * 0x38), tmpl, 0x38);', 'memcpy((M545Part 
 # raised) for all three carry slots (carry-walk 89 held it at his chest and the stack swallowed him; 118 starts crouched).
 rep('unk0[var_r30], 0 /* TODO(mp5): MP4 motion for DK */)', 'unk0[var_r30], sDkMot[var_r30])')
 rep('void fn_1_8454(void) {', 'static const s32 sDkMot[5] = { 0, 132, 132, 132, 23 };\n\nvoid fn_1_8454(void) {')
-# DK's raised hand is level with his head (MP5 characters hold the stack above it): lift the stack so his face shows.
+# DK's raised MP4 hand is level with his head (MP5 characters hold the stack above it): lift the stack so his face
+# shows. Not with the DK mod's MP5 animations, whose hands are where MP5's are.
 rep('''        Hu3DModelObjMtxGet(work->unk3C[var_r31 + 0x24].unk0, lbl_1_bss_C[var_r31].unk54[0], (f32 (*)[4]) lbl_1_bss_C[var_r31].unk20[0]);
 ''', '''        Hu3DModelObjMtxGet(work->unk3C[var_r31 + 0x24].unk0, lbl_1_bss_C[var_r31].unk54[0], (f32 (*)[4]) lbl_1_bss_C[var_r31].unk20[0]);
-        if (work->unk4[var_r31].unk2 == 5) { lbl_1_bss_C[var_r31].unk20[1][3] += 35.0f; }
+        if (work->unk4[var_r31].unk2 == 5 && !Mp5CharHasMotions(5)) { lbl_1_bss_C[var_r31].unk20[1][3] += 35.0f; }
 ''')
 open(p, 'w', encoding='utf-8', newline='\n').write(s)

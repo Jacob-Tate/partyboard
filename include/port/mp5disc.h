@@ -13,6 +13,12 @@ extern "C" {
 int partyboard_mp5_mount(const char *path);
 // 1 when an MP5 disc is mounted.
 int partyboard_mp5_available(void);
+// Optional "DK in Mario Party 5" mod (OverBoo; DK in Boo's place): the extracted mod folder. Its teresa.bin and
+// teresamot.bin are then mounted as /mp5dk/data/... and DK plays MP5's own animations in the ports instead of
+// MP4 stand-ins. Call before partyboard_mp5_mount.
+void partyboard_mp5_set_dk_mod(const char *dir);
+// 1 when the DK mod is mounted and in use. Always 0 online: every machine must play the same animations.
+int partyboard_mp5_dk_mod(void);
 
 #ifdef __cplusplus
 }

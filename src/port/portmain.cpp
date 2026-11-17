@@ -352,6 +352,7 @@ static void EnsureInitialPipelineCache(const std::filesystem::path& configDir) {
 static void mount_mp5_disc(const std::string& mp4Path) {
     auto& setting = partyboard::getSettings().backend.mp5IsoPath;
     std::string path = setting.getValue();
+    partyboard_mp5_set_dk_mod(partyboard::getSettings().backend.mp5DkModPath.getValue().c_str());
     if (!path.empty()) {
         partyboard_mp5_mount(path.c_str());
         return;
@@ -454,6 +455,9 @@ extern "C" int port_main(int argc, char* argv[]) {
     }
     if (autotest->mp5IsoPath != nullptr) {
         partyboard::getSettings().backend.mp5IsoPath.setValue(autotest->mp5IsoPath);
+    }
+    if (autotest->mp5DkModPath != nullptr) {
+        partyboard::getSettings().backend.mp5DkModPath.setValue(autotest->mp5DkModPath);
     }
     EnsureInitialPipelineCache(PartyBoard_ConfigPath);
     // TODO: How to handle this?
