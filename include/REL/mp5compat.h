@@ -261,6 +261,33 @@ static void Mp5CameraPosGet(s32 cameraBit, HuVecF *pos, HuVecF *up, HuVecF *targ
     }
 }
 
+// MP5 can read a camera's perspective back; MP4 keeps the same fields in Hu3DCamera.
+static void Hu3DCameraPerspectiveGet(s32 cameraBit, float *fov, float *nnear, float *ffar)
+{
+    s32 i;
+    for (i = 0; i < HU3D_CAM_MAX; i++) {
+        if (cameraBit & (1 << i)) {
+            *fov = Hu3DCamera[i].fov;
+            *nnear = Hu3DCamera[i].nnear;
+            *ffar = Hu3DCamera[i].ffar;
+            return;
+        }
+    }
+}
+
+// MP5's counterpart of Hu3DModelShadowMapObjSet: clears the shadow-map flag on every object of the model.
+static void Hu3DModelShadowMapObjReset(s16 modelId)
+{
+    HSFDATA *hsf = Hu3DData[modelId].hsf;
+    HSFOBJECT *obj = hsf->object;
+    s32 i;
+    for (i = 0; i < hsf->objectNum; i++, obj++) {
+        if (obj->constData) {
+            ((HSFCONSTDATA *)obj->constData)->attr &= ~HU3D_CONST_SHADOW_MAP;
+        }
+    }
+}
+
 // MP5 keeps a shadow per camera; MP4 has one shadow shared by every camera.
 static void Hu3DShadowMultiCreate(float fov, float nnear, float ffar, s16 cameraBit)
 {
