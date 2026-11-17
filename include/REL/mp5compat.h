@@ -669,15 +669,23 @@ static void MgScoreWinColorSet(s16 gid, u8 r, u8 g, u8 b)
 
 #define MGSCORE_DIGIT_MAX 7
 
+#define MGSCORE_UNIT_SPRNO MGSCORE_DIGIT_MAX
+
 typedef struct MgScore_s {
     HuVec2f pos;
+    HuVec2f scale;
     HuVec2f digitScale;
+    HuVec2f unitOfs;
+    float zRot;
     float digitW;
+    float tpLvl;
     u8 r, g, b;
     s32 value;
     s32 maxDigit;
-    HUSPRID sprId[MGSCORE_DIGIT_MAX];
+    HUSPRID sprId[MGSCORE_DIGIT_MAX + 1];
     HUSPRGRPID grpId;
+    BOOL grpSetF; // MgScoreScaleSet/ZRotSet/TPLvlSet used: apply the group's scale/rotation/transparency
+    BOOL unitF;
     BOOL dispF;
     BOOL validF;
     BOOL dispLeadZeroF;
@@ -736,7 +744,23 @@ static void Mp5ScoreDispUpdate(MGSCORE *score)
             HuSprAttrSet(score->grpId, i, HUSPR_ATTR_DISPOFF);
         }
     }
+    if (score->unitF) {
+        HuSprPosSet(score->grpId, MGSCORE_UNIT_SPRNO,
+            (score->unitOfs.x + (score->maxDigit * score->digitW)) - score->unitOfs.y, 0.0f);
+        HuSprColorSet(score->grpId, MGSCORE_UNIT_SPRNO, score->r, score->g, score->b);
+        HuSprScaleSet(score->grpId, MGSCORE_UNIT_SPRNO, score->digitScale.x, score->digitScale.y);
+        if (score->dispF) {
+            HuSprAttrReset(score->grpId, MGSCORE_UNIT_SPRNO, HUSPR_ATTR_DISPOFF);
+        } else {
+            HuSprAttrSet(score->grpId, MGSCORE_UNIT_SPRNO, HUSPR_ATTR_DISPOFF);
+        }
+    }
     HuSprGrpPosSet(score->grpId, score->pos.x, score->pos.y);
+    if (score->grpSetF) {
+        // (zRot is stored but not applied: the dol has no HuSprGrpZRotSet, and the callers only set 0)
+        HuSprGrpScaleSet(score->grpId, score->scale.x, score->scale.y);
+        HuSprGrpTPLvlSet(score->grpId, score->tpLvl);
+    }
     score->validF = TRUE;
 }
 
@@ -755,22 +779,37 @@ static MGSCORE *MgScoreCreate(s32 digitFile, s32 unitFile, BOOL dispLeadZeroF)
     ANIMDATA *anim;
     s32 i;
 
-    (void)unitFile; // no caller uses the unit sprite
     memset(score, 0, sizeof(*score));
+    score->scale.x = score->scale.y = 1.0f;
     score->digitScale.x = score->digitScale.y = 1.0f;
+    score->tpLvl = 1.0f;
     score->maxDigit = 5;
     score->r = 255;
     score->g = 216;
     score->b = 21;
     score->dispF = TRUE;
     score->dispLeadZeroF = dispLeadZeroF;
-    score->grpId = HuSprGrpCreate(MGSCORE_DIGIT_MAX);
+    score->grpId = HuSprGrpCreate(MGSCORE_DIGIT_MAX + 1);
     anim = HuSprAnimReadFile(digitFile);
     for (i = 0; i < MGSCORE_DIGIT_MAX; i++) {
         score->sprId[i] = HuSprCreate(anim, 90, 0); // above MgScoreWin's panel (100)
         HuSprGrpMemberSet(score->grpId, i, score->sprId[i]);
     }
     score->digitW = anim->pat->sizeX;
+    if (unitFile != -1) { // the unit sprite (MP5 score.c: bank 1, offsets by the unit's size)
+        static const float unitOfsTbl[3][4] = { { 8, 28, 28, 8 }, { 10, 34, 34, 10 }, { 12, 40, 40, 12 } };
+        s32 unitType = 0;
+        if (unitFile == DATA_MAKE_NUM(DATADIR_MP5_MGCONST, 55)) { // unitBlueMedium
+            unitType = 1;
+        } else if (unitFile == DATA_MAKE_NUM(DATADIR_MP5_MGCONST, 56)) { // unitLarge
+            unitType = 2;
+        }
+        score->sprId[MGSCORE_UNIT_SPRNO] = HuSprCreate(HuSprAnimReadFile(unitFile), 90, 1);
+        HuSprGrpMemberSet(score->grpId, MGSCORE_UNIT_SPRNO, score->sprId[MGSCORE_UNIT_SPRNO]);
+        score->unitOfs.x = unitOfsTbl[unitType][1];
+        score->unitOfs.y = unitOfsTbl[unitType][3];
+        score->unitF = TRUE;
+    }
     Mp5ScoreDispUpdate(score);
     score->proc = HuPrcChildCreate(Mp5ScoreMain, 100, 0x1000, 0, HuPrcCurrentGet());
     score->proc->property = score;
@@ -809,6 +848,51 @@ static void MgScoreMaxDigitSet(MGSCORE *score, s32 maxDigit)
 {
     score->maxDigit = maxDigit;
     score->validF = FALSE;
+}
+
+static void MgScoreKill(MGSCORE *score)
+{
+    HuSprGrpKill(score->grpId);
+    HuPrcKill(score->proc);
+    HuMemDirectFree(score);
+}
+
+static void MgScoreScaleSet(MGSCORE *score, float scaleX, float scaleY)
+{
+    score->scale.x = scaleX;
+    score->scale.y = scaleY;
+    score->grpSetF = TRUE;
+    score->validF = FALSE;
+}
+
+static void MgScoreZRotSet(MGSCORE *score, float zRot)
+{
+    score->zRot = zRot;
+    score->grpSetF = TRUE;
+    score->validF = FALSE;
+}
+
+static void MgScoreTPLvlSet(MGSCORE *score, float tpLvl)
+{
+    score->tpLvl = tpLvl;
+    score->grpSetF = TRUE;
+    score->validF = FALSE;
+}
+
+static void MgScoreDigitWidthSet(MGSCORE *score, float digitW)
+{
+    score->digitW = digitW;
+    score->validF = FALSE;
+}
+
+static void MgScorePriSet(MGSCORE *score, s16 prio)
+{
+    s32 i;
+    for (i = 0; i <= MGSCORE_DIGIT_MAX; i++) {
+        if (i < MGSCORE_DIGIT_MAX || score->unitF) {
+            HuSprPriSet(score->grpId, i, prio);
+        }
+    }
 }
 
 static void MgScoreDispOn(MGSCORE *score)
