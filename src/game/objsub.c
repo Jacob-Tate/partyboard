@@ -1378,6 +1378,25 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         MP5_MESSID(MP5_MESSDIR_MGINST, 218), // inst_mess[3]
     },
     {
+        // m528 (2 vs 2 team can pushing), ported from Mario Party 5's m528 m2c draft.
+        DLL_m528dll, // ovl
+        2, // type
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(528), // name_mess
+        DATADIR_MP5_M528, // data_dir
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 29), // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 29), // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 190), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 191), // inst_mess[1]
+        0, // inst_mess[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 193), // inst_mess[3]
+    },
+    {
         ((u16)DLL_NONE), // ovl
         0, // type
         0, // flag
