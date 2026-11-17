@@ -690,6 +690,8 @@ typedef struct MgScore_s {
     BOOL validF;
     BOOL dispLeadZeroF;
     HUPROCESS *proc;
+    ANIMDATA *digitAnim; // the digit sprites' animation (MP5 MGSCORE has it; m514 draws a "." from it)
+    BOOL tpSetF; // MgScoreTPLvlSet used: also set each digit's transparency (m514)
 } MGSCORE;
 
 static void Mp5ScoreDispUpdate(MGSCORE *score)
@@ -740,6 +742,9 @@ static void Mp5ScoreDispUpdate(MGSCORE *score)
             }
             HuSprScaleSet(score->grpId, i, score->digitScale.x, score->digitScale.y);
             HuSprColorSet(score->grpId, i, score->r, score->g, score->b);
+            if (score->tpSetF) {
+                HuSprTPLvlSet(score->grpId, i, score->tpLvl);
+            }
         } else {
             HuSprAttrSet(score->grpId, i, HUSPR_ATTR_DISPOFF);
         }
@@ -791,6 +796,7 @@ static MGSCORE *MgScoreCreate(s32 digitFile, s32 unitFile, BOOL dispLeadZeroF)
     score->dispLeadZeroF = dispLeadZeroF;
     score->grpId = HuSprGrpCreate(MGSCORE_DIGIT_MAX + 1);
     anim = HuSprAnimReadFile(digitFile);
+    score->digitAnim = anim;
     for (i = 0; i < MGSCORE_DIGIT_MAX; i++) {
         score->sprId[i] = HuSprCreate(anim, 90, 0); // above MgScoreWin's panel (100)
         HuSprGrpMemberSet(score->grpId, i, score->sprId[i]);
@@ -875,6 +881,7 @@ static void MgScoreZRotSet(MGSCORE *score, float zRot)
 static void MgScoreTPLvlSet(MGSCORE *score, float tpLvl)
 {
     score->tpLvl = tpLvl;
+    score->tpSetF = TRUE;
     score->grpSetF = TRUE;
     score->validF = FALSE;
 }

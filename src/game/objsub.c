@@ -1549,6 +1549,25 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         MP5_MESSID(MP5_MESSDIR_MGINST, 28), // inst_mess[3]
     },
     {
+        // m514 Triple Jump (4 players), ported from Mario Party 5's m514 m2c draft.
+        DLL_m514dll, // ovl
+        0, // type (4 player)
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(514), // name_mess
+        DATADIR_MP5_M514, // data_dir
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 13), // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 13), // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 65), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 66), // inst_mess[1]
+        0, // inst_mess[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 68), // inst_mess[3]
+    },
+    {
         ((u16)DLL_NONE), // ovl
         0, // type
         0, // flag

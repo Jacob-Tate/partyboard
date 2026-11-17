@@ -197,6 +197,7 @@ DLL(m523Dll)
 DLL(m534Dll)
 DLL(m577Dll)
 DLL(m506Dll)
+DLL(m514Dll)
 #define DLL_m570dll DLL_m570Dll
 #define DLL_m554dll DLL_m554Dll
 #define DLL_m548dll DLL_m548Dll
@@ -215,6 +216,7 @@ DLL(m506Dll)
 #define DLL_m534dll DLL_m534Dll
 #define DLL_m577dll DLL_m577Dll
 #define DLL_m506dll DLL_m506Dll
+#define DLL_m514dll DLL_m514Dll
 #define DLL_modeltestdll DLL_modeltestDll
 #define DLL_messdll DLL_messDll
 #define DLL_mpexdll DLL_mpexDll

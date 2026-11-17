@@ -399,6 +399,7 @@ set(REL_FILES
         src/REL/m534Dll/main.c
         src/REL/m577Dll/main.c
         src/REL/m506Dll/main.c
+        src/REL/m514Dll/main.c
 
         src/REL/mentDll/common.c
         src/REL/mentDll/main.c
