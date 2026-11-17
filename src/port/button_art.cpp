@@ -111,6 +111,13 @@ const Art kArt[] = {
     // instDll's START and Z button models (every instruction stand's colour shares them), C8 with an RGB565 palette
     { 0x0925FA4F8AE52409ULL, 1, HSF_BMPFMT_CI_RGB565, 128, 128, 1, "inst START", 1, { { 12, 0, 0, 128, 128, F_PLATE, 0.75f, false, kNoChecker } } },
     { 0xA8989C9ED7B70E3CULL, 1, HSF_BMPFMT_CI_RGB565, 128, 64, 1, "inst Z", 1, { { 11, 0, 0, 128, 48, F_PLATE, 1.4f, false, kNoChecker } } },
+    // m544 Shy Guy Showdown's card buttons (models, CI RGB565 letters on a round plate), cards 0..5 = A B X Y L R
+    { 0x079CBCEEDDA24571ULL, 1, HSF_BMPFMT_CI_RGB565, 64, 64, 2, "m544 card A", 1, { { 2, 0, 0, 64, 64, F_CLEAR, 0.9f, false, kNoChecker } } },
+    { 0x53761D500FE59307ULL, 1, HSF_BMPFMT_CI_RGB565, 64, 64, 2, "m544 card B", 1, { { 3, 0, 0, 64, 64, F_CLEAR, 0.9f, false, kNoChecker } } },
+    { 0x51E6E42F36DBA65FULL, 1, HSF_BMPFMT_CI_RGB565, 64, 64, 2, "m544 card X", 1, { { 4, 0, 0, 64, 64, F_CLEAR, 0.9f, false, kNoChecker } } },
+    { 0x2B57A25E5A620DC9ULL, 1, HSF_BMPFMT_CI_RGB565, 64, 64, 2, "m544 card Y", 1, { { 5, 0, 0, 64, 64, F_CLEAR, 0.9f, false, kNoChecker } } },
+    { 0x87A23534E5293F3AULL, 1, HSF_BMPFMT_CI_RGB565, 64, 64, 2, "m544 card L", 1, { { 8, 0, 0, 64, 64, F_CLEAR, 0.9f, false, kNoChecker } } },
+    { 0xF9BDD3C6DA865714ULL, 1, HSF_BMPFMT_CI_RGB565, 64, 64, 2, "m544 card R", 1, { { 6, 0, 0, 64, 64, F_CLEAR, 0.9f, false, kNoChecker } } },
 };
 // clang-format on
 
