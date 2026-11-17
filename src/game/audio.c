@@ -750,6 +750,7 @@ static const s16 mp5SndGrpTbl[][2] = {
     { DLL_m519dll, 39 }, // MSM_GRP_MG519 (MP5 auxA 4 not applied)
     { DLL_m523dll, 43 }, // MSM_GRP_MG523
     { DLL_m534dll, 54 }, // MSM_GRP_MG534
+    { DLL_m577dll, 88 }, // MSM_GRP_MG577
     { DLL_NONE, -1 },
 };
 
