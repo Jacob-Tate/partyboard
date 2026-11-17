@@ -241,6 +241,17 @@ def struct_layouts(s):
             esz = 4 if fm.group(2) else sizes.get(fm.group(1))
             if esz is None:
                 break
+            fp = re.match(r'\(\*(\w+)((?:\[\w+\])*)\)\(', fm.group(3))
+            if fp:  # function pointer field: `ret (*name[N])(args);`
+                dims = [int(x, 0) for x in re.findall(r'\[(\w+)\]', fp.group(2))]
+                cnt = 1
+                for x in dims:
+                    cnt *= x
+                off = (off + 3) // 4 * 4
+                fields.append((off, 4, cnt, fp.group(1)))
+                FIELD_TYPES[(m.group(2), fp.group(1))] = 'void *'
+                off += 4 * cnt
+                continue
             for decl in fm.group(3).split(','):
                 dm = re.match(r'\s*\*?\s*(\w+)\s*((?:\[\w+\])*)', decl)
                 dims = [int(x, 0) for x in re.findall(r'\[(\w+)\]', dm.group(2))]
