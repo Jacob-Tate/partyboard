@@ -411,6 +411,7 @@ typedef struct Mp5MgTimer {
     s32 mode;
     s32 maxTime, endTime, speed, time; // frames
     BOOL stopF; // MP5 code sets it to freeze the timer
+    BOOL paused; // frozen but still shown (debug panels)
     s16 seqId;
     HUPROCESS *proc;
     s16 posX, posY; // display position (-1: MGSeq's default, top centre)
@@ -420,7 +421,7 @@ static void Mp5MgTimerMain(void)
 {
     MGTIMER *timer = (MGTIMER *)HuPrcCurrentGet()->property;
     while (TRUE) {
-        if (timer->mode == MGTIMER_MODE_ON && !timer->stopF && timer->time != timer->endTime) {
+        if (timer->mode == MGTIMER_MODE_ON && !timer->stopF && !timer->paused && timer->time != timer->endTime) {
             timer->time += timer->speed;
             if (timer->seqId >= 0) {
                 MGSeqParamSet(timer->seqId, 1, (timer->time + 59) / 60);
@@ -477,6 +478,13 @@ static void MgTimerPosSet(MGTIMER *timer, float posX, float posY)
     timer->posY = (s16)posY;
     if (timer->seqId >= 0) {
         MGSeqPosSet(timer->seqId, posX, posY);
+    }
+}
+
+static void MgTimerPauseSet(MGTIMER *timer, BOOL paused)
+{
+    if (timer != NULL) {
+        timer->paused = paused;
     }
 }
 

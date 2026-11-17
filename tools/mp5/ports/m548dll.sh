@@ -86,8 +86,31 @@ rep('temp_r31->unkC = Hu3DMotionTimeGet(lbl_1_bss_5F8->unk3C[temp_r0].unk0);', '
                 temp_r31->unkC = whole;
             }
         }''')
+# M548_TWEAK=1: a live tweak panel for DK's pose (tools/mp5/ports/m548dll_tweak_*.inc); never committed
+import os
+if os.environ.get('M548_TWEAK'):
+    rep('lbl_1_bss_384[var_r31].unk14 += 20.0f;', 'lbl_1_bss_384[var_r31].unk14 += sDkTw[6];')
+    rep('lbl_1_bss_44.x += 12.0f;', 'lbl_1_bss_44.x += sDkTw[7];')
+    rep('lbl_1_bss_44.y += 12.0f;', 'lbl_1_bss_44.y += sDkTw[8];')
+    rep('temp_r31->unk4 * sDkMotScale[var_r29]);', '(sDkTweak ? 0.0f : temp_r31->unk4 * sDkMotScale[var_r29]));')
+    rep('    var_r29 = 0;\nloop_12:', """    {
+        static int prevTweak;
+        if (prevTweak != sDkTweak) {
+            lbl_1_bss_5F8->unk50[0].unk8 = lbl_1_bss_5F8->unk50[0].unk4 + 1.0f;
+            lbl_1_bss_5F8->unk50[1].unk8 = lbl_1_bss_5F8->unk50[1].unk4 + 1.0f;
+            prevTweak = sDkTweak;
+        }
+    }
+    var_r29 = 0;
+loop_12:""")
+    rep('void fn_1_9B4(s16 mode, s16 frameNo) {\n', 'void fn_1_9B4(s16 mode, s16 frameNo) {\n    if (sDkTweak && lbl_1_bss_3F0.unkA0 != 1) {\n        fn_1_202C();\n        return;\n    }\n')
+    rep('    fn_1_6D4C();\n', '    fn_1_6D4C();\n    sDkMotReady = 1;\n')
+    rep('    MgSeqCreate(&lbl_1_data_2F0);', '    omAddObjEx(lbl_1_bss_3F0.unk0, 0x7FDA, 0U, 0U, -1, Mp5DkTweak);\n    MgSeqCreate(&lbl_1_data_2F0);')
 open(p, 'w', encoding='utf-8', newline='\n').write(s)
 PY
 mkdir -p src/REL/m548Dll
 { echo '// MP5 m548 (Head Waiter), generated from its m2c draft by tools/mp5/ports/m548dll.sh (do not hand-edit lightly).'
-  echo '#include "REL/mp5compat.h"'; grep -v "^extern" tools/mp5/types/m548dll.h; cat $f; } > src/REL/m548Dll/main.c
+  echo '#include "REL/mp5compat.h"'; grep -v "^extern" tools/mp5/types/m548dll.h
+  [ -n "$M548_TWEAK" ] && cat tools/mp5/ports/m548dll_tweak_head.inc
+  cat $f
+  [ -n "$M548_TWEAK" ] && cat tools/mp5/ports/m548dll_tweak_tail.inc; true; } > src/REL/m548Dll/main.c
