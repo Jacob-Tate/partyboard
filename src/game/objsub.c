@@ -1302,6 +1302,45 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         MP5_MESSID(MP5_MESSDIR_MGINST, 198), // inst_mess[3]
     },
     {
+        // Slot 472 belongs to the other parallel port (m545); this is a PLACEHOLDER (a copy of Head Waiter) that the
+        // orchestrator replaces with the real m545 entry at merge, so that m550's slot 473 below stays put.
+        DLL_m548dll, // ovl
+        6, // type
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(548), // name_mess
+        DATADIR_MP5_M548, // data_dir
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 49), // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 49), // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 300), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 301), // inst_mess[1]
+        0, // inst_mess[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 303), // inst_mess[3]
+    },
+    {
+        // MP5 m550 (1 vs 1 button-mashing duel), ported from its m2c draft.
+        DLL_m550dll, // ovl
+        6, // type
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(550), // name_mess
+        DATADIR_MP5_M550, // data_dir
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 51), // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 51), // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 310), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 311), // inst_mess[1]
+        0, // inst_mess[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 313), // inst_mess[3]
+    },
+    {
         ((u16)DLL_NONE), // ovl
         0, // type
         0, // flag
