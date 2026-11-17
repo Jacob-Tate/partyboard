@@ -6,7 +6,7 @@ python tools/mp5/decomp.py m548dll --types tools/mp5/types/m548dll.h | tail -2
 f=build/mp5/m548dll.c
 python tools/mp5/port.py $f | head -1
 python - "$f" <<'PY'
-import re, sys
+import re, sys, os
 p = sys.argv[1]; s = open(p, encoding='utf-8').read()
 def rep(a, b, count=1):
     global s
@@ -43,19 +43,20 @@ s = re.sub(r'lbl_1_data_(0|184|288|424)\[((?:[^\[\]]|\[[^\[\]]*\])*\.unk2)\]', r
 rep('''        lbl_1_bss_384[var_r31].unk14 = lbl_1_data_0[Mp5CharNo(lbl_1_bss_3F0.unk4[var_r31].unk2)][5];
 ''', '''        lbl_1_bss_384[var_r31].unk14 = lbl_1_data_0[Mp5CharNo(lbl_1_bss_3F0.unk4[var_r31].unk2)][5];
         if (!Mp5CharHasMotions(lbl_1_bss_3F0.unk4[var_r31].unk2)) {
-            lbl_1_bss_384[var_r31].unk14 += 20.0f;
+            lbl_1_bss_384[var_r31].unk14 += 14.0f;
         }
 ''')
 # DK's initial hold sits a little further right, and when he catches the head it is held a little higher
 rep('''    lbl_1_bss_44.x = -lbl_1_bss_384->unk10;
 ''', '''    lbl_1_bss_44.x = -lbl_1_bss_384->unk10;
     if (!Mp5CharHasMotions(lbl_1_bss_3F0.unk4[0].unk2)) {
-        lbl_1_bss_44.x += 12.0f;
+        lbl_1_bss_44.x += 32.0f;
     }
 ''')
 assert s.count('unkC == 49.0f') == 1
 rep('        if (lbl_1_bss_3F0.unk50[lbl_1_bss_3D0.unk6 ^ 1].unkC == 49.0f) {', '''        if (!Mp5CharHasMotions(lbl_1_bss_3F0.unk4[lbl_1_bss_3D0.unk6 ^ 1].unk2)) {
-            lbl_1_bss_44.y += 12.0f;
+            lbl_1_bss_44.y += 40.0f;
+            lbl_1_bss_44.x += -2.0f;
         }
         if (lbl_1_bss_3F0.unk50[lbl_1_bss_3D0.unk6 ^ 1].unkC == 49.0f) {''')
 # Motion time drives the game (the pass completes at time 50, the blast at 110...). DK's MP4 stand-in motions
@@ -86,12 +87,46 @@ rep('temp_r31->unkC = Hu3DMotionTimeGet(lbl_1_bss_5F8->unk3C[temp_r0].unk0);', '
                 temp_r31->unkC = whole;
             }
         }''')
+
+# DK's carry motion (MP4 motion 12) adjusted once it is bound to the model: right hand turned in (rot X +125), head
+# tilted (rot Z -35) and the eyes a little bigger (+1 scale); values picked with the tweak panel
+if not os.environ.get('M548_TWEAK'):
+    rep('static f32 sDkMotScale[2] = { 1.0f, 1.0f }; // MP4 motion length / MP5 motion length\n', """static f32 sDkMotScale[2] = { 1.0f, 1.0f }; // MP4 motion length / MP5 motion length
+static s32 sDkCarryFixed[2];
+
+static void Mp5DkCarryFix(s16 model, s16 motId)
+{
+    HSFDATA *hsf = Hu3DData[model].hsf;
+    HSFMOTION *mo = Hu3DMotion[motId].hsf->motion;
+    s32 ti;
+    for (ti = 0; ti < mo->numTracks; ti++) {
+        HSFTRACK *tr = &mo->track[ti];
+        if (tr->type == HSF_TRACK_TRANSFORM && tr->curveType == HSF_CURVE_CONST && tr->target < hsf->objectNum) {
+            const char *name = hsf->object[tr->target].name;
+            if (tr->channel == HSF_CHANNEL_ROTX && strcmp(name, "root_R_hand") == 0) {
+                tr->value += 125.0f;
+            } else if (tr->channel == HSF_CHANNEL_ROTZ && strcmp(name, "root_head") == 0) {
+                tr->value += -35.0f;
+            } else if (tr->channel >= HSF_CHANNEL_SCALEX && tr->channel <= HSF_CHANNEL_SCALEZ
+                && (strcmp(name, "donkey_L_eye") == 0 || strcmp(name, "donkey_R_eye") == 0)) {
+                tr->value += 1.0f;
+            }
+        }
+    }
+}
+""")
+    rep('            sDkMotScale[var_r29] = 1.0f;\n', """            sDkMotScale[var_r29] = 1.0f;
+            if (temp_r31->unk0 == 1 && !Mp5CharHasMotions(lbl_1_bss_5F8->unk4[var_r29].unk2) && !sDkCarryFixed[var_r29]) {
+                sDkCarryFixed[var_r29] = 1;
+                Mp5DkCarryFix(lbl_1_bss_5F8->unk3C[temp_r0].unk0, lbl_1_bss_5F8->unk48[var_r29][1]);
+            }
+""")
 # M548_TWEAK=1: a live tweak panel for DK's pose (tools/mp5/ports/m548dll_tweak_*.inc); never committed
 import os
 if os.environ.get('M548_TWEAK'):
-    rep('lbl_1_bss_384[var_r31].unk14 += 20.0f;', 'lbl_1_bss_384[var_r31].unk14 += sDkTw[6];')
-    rep('lbl_1_bss_44.x += 12.0f;', 'lbl_1_bss_44.x += sDkTw[7];')
-    rep('lbl_1_bss_44.y += 12.0f;', 'lbl_1_bss_44.y += sDkTw[8];\n            lbl_1_bss_44.x += sDkTw[9];')
+    rep('lbl_1_bss_384[var_r31].unk14 += 14.0f;', 'lbl_1_bss_384[var_r31].unk14 += sDkTw[6];')
+    rep('lbl_1_bss_44.x += 32.0f;', 'lbl_1_bss_44.x += sDkTw[7];')
+    rep('lbl_1_bss_44.y += 40.0f;\n            lbl_1_bss_44.x += -2.0f;', 'lbl_1_bss_44.y += sDkTw[8];\n            lbl_1_bss_44.x += sDkTw[9];')
     rep('temp_r31->unk4 * sDkMotScale[var_r29]);', '(sDkTweak ? 0.0f : temp_r31->unk4 * sDkMotScale[var_r29]));')
     rep('    var_r29 = 0;\nloop_12:', """    {
         static int prevTweak;

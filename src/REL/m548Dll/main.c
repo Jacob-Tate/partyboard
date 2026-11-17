@@ -716,7 +716,8 @@ void fn_1_309C(void) {
             lbl_1_bss_44.y = pos.y + (lbl_1_bss_384[1].unk14 - lbl_1_bss_384[1].unk4);
         }
         if (!Mp5CharHasMotions(lbl_1_bss_3F0.unk4[lbl_1_bss_3D0.unk6 ^ 1].unk2)) {
-            lbl_1_bss_44.y += 12.0f;
+            lbl_1_bss_44.y += 40.0f;
+            lbl_1_bss_44.x += -2.0f;
         }
         if (lbl_1_bss_3F0.unk50[lbl_1_bss_3D0.unk6 ^ 1].unkC == 49.0f) {
             lbl_1_bss_3F0.unk50[lbl_1_bss_3D0.unk6 ^ 1].unk4 = 0.0f;
@@ -1344,7 +1345,7 @@ loop_2:
         lbl_1_bss_384[var_r31].unk10 = lbl_1_data_0[Mp5CharNo(lbl_1_bss_3F0.unk4[var_r31].unk2)][4];
         lbl_1_bss_384[var_r31].unk14 = lbl_1_data_0[Mp5CharNo(lbl_1_bss_3F0.unk4[var_r31].unk2)][5];
         if (!Mp5CharHasMotions(lbl_1_bss_3F0.unk4[var_r31].unk2)) {
-            lbl_1_bss_384[var_r31].unk14 += 20.0f;
+            lbl_1_bss_384[var_r31].unk14 += 14.0f;
         }
         var_r31 += 1;
         goto loop_2;
@@ -1507,7 +1508,7 @@ void fn_1_167C(void) {
     lbl_1_bss_3B4 = Hu3DTexScrollCreate(temp_r3, "m548time");
     lbl_1_bss_44.x = -lbl_1_bss_384->unk10;
     if (!Mp5CharHasMotions(lbl_1_bss_3F0.unk4[0].unk2)) {
-        lbl_1_bss_44.x += 12.0f;
+        lbl_1_bss_44.x += 32.0f;
     }
     lbl_1_bss_44.y = lbl_1_bss_384->unk14;
     lbl_1_bss_44.z = 0.0f;
@@ -1787,6 +1788,28 @@ loop_8:
 
 static const f32 sMp5MotLen[5] = { 59.0f, 119.0f, 9.0f, 0.0f, 24.0f };
 static f32 sDkMotScale[2] = { 1.0f, 1.0f }; // MP4 motion length / MP5 motion length
+static s32 sDkCarryFixed[2];
+
+static void Mp5DkCarryFix(s16 model, s16 motId)
+{
+    HSFDATA *hsf = Hu3DData[model].hsf;
+    HSFMOTION *mo = Hu3DMotion[motId].hsf->motion;
+    s32 ti;
+    for (ti = 0; ti < mo->numTracks; ti++) {
+        HSFTRACK *tr = &mo->track[ti];
+        if (tr->type == HSF_TRACK_TRANSFORM && tr->curveType == HSF_CURVE_CONST && tr->target < hsf->objectNum) {
+            const char *name = hsf->object[tr->target].name;
+            if (tr->channel == HSF_CHANNEL_ROTX && strcmp(name, "root_R_hand") == 0) {
+                tr->value += 125.0f;
+            } else if (tr->channel == HSF_CHANNEL_ROTZ && strcmp(name, "root_head") == 0) {
+                tr->value += -35.0f;
+            } else if (tr->channel >= HSF_CHANNEL_SCALEX && tr->channel <= HSF_CHANNEL_SCALEZ
+                && (strcmp(name, "donkey_L_eye") == 0 || strcmp(name, "donkey_R_eye") == 0)) {
+                tr->value += 1.0f;
+            }
+        }
+    }
+}
 
 void fn_1_6EA0(omObjData *obj) {
     M548Anim *temp_r31;
@@ -1803,6 +1826,10 @@ loop_12:
             temp_r31->unk2 = temp_r31->unk0;
             temp_r31->unk14 = Hu3DMotionMaxTimeGet(lbl_1_bss_5F8->unk3C[temp_r0].unk0);
             sDkMotScale[var_r29] = 1.0f;
+            if (temp_r31->unk0 == 1 && !Mp5CharHasMotions(lbl_1_bss_5F8->unk4[var_r29].unk2) && !sDkCarryFixed[var_r29]) {
+                sDkCarryFixed[var_r29] = 1;
+                Mp5DkCarryFix(lbl_1_bss_5F8->unk3C[temp_r0].unk0, lbl_1_bss_5F8->unk48[var_r29][1]);
+            }
             if (!Mp5CharHasMotions(lbl_1_bss_5F8->unk4[var_r29].unk2) && sMp5MotLen[temp_r31->unk0] > 0.0f) {
                 sDkMotScale[var_r29] = temp_r31->unk14 / sMp5MotLen[temp_r31->unk0];
                 temp_r31->unk14 = sMp5MotLen[temp_r31->unk0];

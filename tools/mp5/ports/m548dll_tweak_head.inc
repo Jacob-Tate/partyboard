@@ -14,7 +14,7 @@ static f32 sDkTw[DKTW_N] = {
     -2.0f,              // 9 catch: head x
     0.0f, 0.0f, -35.0f, // 10-12 DK head rotation X Y Z (carry motion)
     0.0f, 0.0f, 0.0f,   // 13-15 both eyes: forward, up, spread (left +, right -)
-    0.0f,               // 16 both eyes: size added to the scale (about 10.75)
+    1.0f,               // 16 both eyes: size added to the scale (about 10.75)
     0.0f, 0.0f, 0.0f,   // 17-19 both eyes: rotation X Y Z
 };
 void Mp5DkTweak(omObjData *obj);
