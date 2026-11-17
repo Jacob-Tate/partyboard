@@ -13,6 +13,9 @@ void HuMemInitAll(void)
     for(i=0; i<4; i++) {
 #ifdef TARGET_PC
         HeapSizeTbl[i] *= 4;
+        if (i == 3) {
+            HeapSizeTbl[i] += HeapSizeTbl[i] / 2; // the larger MP5 ports (m577 + the DK mod) overflow the 22MB file heap
+        }
 #endif
         ptr = OSAlloc(HeapSizeTbl[i]);
         if(ptr == NULL) {
