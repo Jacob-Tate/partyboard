@@ -660,7 +660,7 @@ void fn_1_6758(omObjData *arg0) {
     var_r29 = 0;
 loop_5:
     if (var_r29 < 0x50) {
-        temp_r30 = (M574Ball *)((u8 *)temp_r27 + var_r29 * 0x6C);
+        temp_r30 = (M574Ball *)((u8 *)temp_r27 + var_r29 * sizeof(M574Ball));
         if (var_r29 == 0) {
             var_r26 = Hu3DModelCreate(HuDataSelHeapReadNum(DATA_MAKE_NUM(DATADIR_MP5_M574, 7), MEMORY_DEFAULT_NUM, HEAP_DATA));
             var_r28 = var_r26;
@@ -703,7 +703,7 @@ void fn_1_686C(omObjData *arg0) {
     var_r30 = 0;
 loop_32:
     if (var_r30 < 0x50) {
-        temp_r31 = (M574Ball *)((u8 *)temp_r25 + var_r30 * 0x6C);
+        temp_r31 = (M574Ball *)((u8 *)temp_r25 + var_r30 * sizeof(M574Ball));
         temp_r28 = temp_r31->unk14;
         temp_r0 = temp_r31->unk0;
         switch (temp_r0) {                          /* irregular */
@@ -805,7 +805,7 @@ loop_4:
     if (var_r30 >= 0x50) {
         return;
     }
-    temp_r31 = (M574Ball *)((u8 *)lbl_1_bss_50->data + var_r30 * 0x6C);
+    temp_r31 = (M574Ball *)((u8 *)lbl_1_bss_50->data + var_r30 * sizeof(M574Ball));
     if ((s32) temp_r31->unk0 == 0) {
         temp_r31->unk0 = (s32) (temp_r31->unk0 + 1);
         temp_r31->unk18.x = (f32) pos->x;
@@ -829,7 +829,7 @@ s32 fn_1_6CC8(s32 side) {
     var_r29 = 0;
 loop_8:
     if (var_r29 < 0x50) {
-        temp_r31 = (M574Ball *)((u8 *)lbl_1_bss_50->data + var_r29 * 0x6C);
+        temp_r31 = (M574Ball *)((u8 *)lbl_1_bss_50->data + var_r29 * sizeof(M574Ball));
         if ((s32) temp_r31->unk0 != 0) {
             if (side == 0) {
                 if (temp_r31->unk18.x < 0.0f) {
@@ -872,7 +872,7 @@ s32 fn_1_6D7C(s32 side, Vec *pos, f32 farg0, f32 farg1, f32 farg2) {
     var_r30 = 0;
 loop_18:
     if (var_r30 < 0x50) {
-        temp_r31 = (M574Ball *)((u8 *)temp_r27 + var_r30 * 0x6C);
+        temp_r31 = (M574Ball *)((u8 *)temp_r27 + var_r30 * sizeof(M574Ball));
         if ((s32) temp_r31->unk0 != 0) {
             if (sp8 == 0) {
                 if (!(temp_r31->unk18.x >= 0.0f)) {
@@ -917,7 +917,7 @@ block_11:
 M574Hit *fn_1_70B0(s32 idx, Vec *pos, Vec *vel) {
     M574Ball *temp_r31;
 
-    temp_r31 = (M574Ball *)((u8 *)lbl_1_bss_50->data + idx * 0x6C);
+    temp_r31 = (M574Ball *)((u8 *)lbl_1_bss_50->data + idx * sizeof(M574Ball));
     if (pos != NULL) {
         pos->x = temp_r31->unk18.x;
         pos->y = temp_r31->unk18.y;
@@ -2081,7 +2081,7 @@ void fn_1_19AC(omObjData *arg0) {
     temp_r0 = temp_r31->unk2C;
     switch (temp_r0) {                              /* irregular */
     case 0:
-        if (!((f32) (1.52587890625e-05 * (f64) (f32) frand()) > temp_r30->unk14)) {
+        if (!((f32) (1.52587890625e-05 * (f64) (f32) (frand() & 0xFFFF)) > temp_r30->unk14)) {
             temp_r3 = fn_1_6D7C(temp_r31->unk4, temp_r28, 0.0f, 120.0f, temp_r30->unk0);
             if (temp_r3 >= 0) {
                 fn_1_70B0(temp_r3, NULL, &sp8);
@@ -2096,8 +2096,8 @@ void fn_1_19AC(omObjData *arg0) {
                 } else {
                     temp_r31->unk30 = (s32) temp_r30->unk4;
                 }
-                if ((f32) (1.52587890625e-05 * (f64) (f32) frand()) > temp_r30->unk14) {
-                    temp_r31->unk30 = (s32) (temp_r31->unk30 + (s32) (12.0 * (1.52587890625e-05 * (f64) (f32) frand())));
+                if ((f32) (1.52587890625e-05 * (f64) (f32) (frand() & 0xFFFF)) > temp_r30->unk14) {
+                    temp_r31->unk30 = (s32) (temp_r31->unk30 + (s32) (12.0 * (1.52587890625e-05 * (f64) (f32) (frand() & 0xFFFF))));
                 }
             case 1:
                 temp_r31->unk18 = 0x100;
@@ -2110,8 +2110,8 @@ void fn_1_19AC(omObjData *arg0) {
                     } else {
                         temp_r31->unk30 = (s32) temp_r30->unk8;
                     }
-                    if ((f32) (1.52587890625e-05 * (f64) (f32) frand()) > temp_r30->unk14) {
-                        temp_r31->unk30 = (s32) (temp_r31->unk30 + (s32) (15.0 * (1.52587890625e-05 * (f64) (f32) frand())));
+                    if ((f32) (1.52587890625e-05 * (f64) (f32) (frand() & 0xFFFF)) > temp_r30->unk14) {
+                        temp_r31->unk30 = (s32) (temp_r31->unk30 + (s32) (15.0 * (1.52587890625e-05 * (f64) (f32) (frand() & 0xFFFF))));
                     }
                 case 2:
                     temp_r0_3 = temp_r31->unk30 - 1;
@@ -2586,7 +2586,7 @@ loop_11:
                         } else {
                             var_f31 = 120.0f;
                         }
-                        temp_f31 = (f32) (var_f31 + (10.0 * (3.0517578125e-05 * (f64) (f32) (frand() - 0x8000))));
+                        temp_f31 = (f32) (var_f31 + (10.0 * (3.0517578125e-05 * (f64) (f32) ((s32) (frand() & 0xFFFF) - 0x8000))));
                         sp14.x = (f32) (100.0 * (0.2 * sin((3.141592653589793 * (f64) temp_f31) / 180.0)));
                         sp14.y = (f32) (100.0 * (0.2 * cos((3.141592653589793 * (f64) temp_f31) / 180.0)));
                         fn_1_6C2C(&sp8, &sp14);
@@ -2938,7 +2938,7 @@ loop_5:
 loop_3:
         if (var_r30 < 3) {
             temp_r31->unk50[var_r30] = Hu3DModelObjPtrGet(temp_r23, lbl_1_data_2D8[var_r30 + (var_r29 * 3)]);
-            temp_r24 = (s32) (20.0 * (1.52587890625e-05 * (f64) (f32) frand()));
+            temp_r24 = (s32) (20.0 * (1.52587890625e-05 * (f64) (f32) (frand() & 0xFFFF)));
             temp_r31->unk20[var_r30] = temp_r24;
             temp_f0 = 18.0f * (f32) temp_r24;
             temp_r31->unk38[var_r30] = temp_f0;
@@ -3001,7 +3001,7 @@ loop_78:
             var_r30 = 0;
 loop_11:
             if (var_r30 < 3) {
-                temp_r31->unk44[var_r30] = (f32) (4.0 + (1.52587890625e-05 * (f64) (f32) frand()));
+                temp_r31->unk44[var_r30] = (f32) (4.0 + (1.52587890625e-05 * (f64) (f32) (frand() & 0xFFFF)));
                 temp_r31->unk14[var_r30] = 0;
                 var_r30 += 1;
                 goto loop_11;
@@ -3035,7 +3035,7 @@ loop_55:
                             var_r23 = 0;
                             break;
                         case 1:                     /* switch 2 */
-                            if ((f32) (1.52587890625e-05 * (f64) (f32) frand()) < 0.5f) {
+                            if ((f32) (1.52587890625e-05 * (f64) (f32) (frand() & 0xFFFF)) < 0.5f) {
                                 var_r21 = 1;
                             } else {
                                 var_r21 = 0;
@@ -3043,7 +3043,7 @@ loop_55:
                             var_r23 = var_r21;
                             break;
                         case 2:                     /* switch 2 */
-                            if ((f32) (1.52587890625e-05 * (f64) (f32) frand()) < 0.5f) {
+                            if ((f32) (1.52587890625e-05 * (f64) (f32) (frand() & 0xFFFF)) < 0.5f) {
                                 var_r20 = 1;
                             } else {
                                 var_r20 = 0;
@@ -3523,7 +3523,7 @@ loop_46:
     switch (temp_r0) {
     case 0:
         temp_r31->unk0 = (u32) (temp_r31->unk0 + 1);
-        temp_r31->unk10.x = (f32) ((f64) temp_r31->unk10.x + (150.0 * (3.0517578125e-05 * (f64) (f32) (frand() - 0x8000))));
+        temp_r31->unk10.x = (f32) ((f64) temp_r31->unk10.x + (150.0 * (3.0517578125e-05 * (f64) (f32) ((s32) (frand() & 0xFFFF) - 0x8000))));
         temp_r31->unk34 = 0.0f;
         Hu3DMotionSet(temp_r28, arg0->motion[0]);
         /* fallthrough */
@@ -3777,7 +3777,7 @@ loop_20:
                         } else {
                             var_f31 = 120.0f;
                         }
-                        temp_f31 = (f32) (var_f31 + (10.0 * (3.0517578125e-05 * (f64) (f32) (frand() - 0x8000))));
+                        temp_f31 = (f32) (var_f31 + (10.0 * (3.0517578125e-05 * (f64) (f32) ((s32) (frand() & 0xFFFF) - 0x8000))));
                         sp14.x = (f32) (100.0 * (0.2 * sin((3.141592653589793 * (f64) temp_f31) / 180.0)));
                         sp14.y = (f32) (100.0 * (0.2 * cos((3.141592653589793 * (f64) temp_f31) / 180.0)));
                         fn_1_6C2C(&sp8, &sp14);
