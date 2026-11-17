@@ -753,6 +753,7 @@ static const s16 mp5SndGrpTbl[][2] = {
     { DLL_m577dll, 88 }, // MSM_GRP_MG577
     { DLL_m506dll, 26 }, // MSM_GRP_MG506
     { DLL_m514dll, 34 }, // MSM_GRP_MG514
+    { DLL_m515dll, 35 }, // MSM_GRP_MG515
     { DLL_NONE, -1 },
 };
 

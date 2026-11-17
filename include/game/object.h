@@ -135,7 +135,7 @@ SHARED_SYM extern s32 omovlhisidx;
 SHARED_SYM extern s32 omovlevtno;
 extern s32 omnextovlevtno;
 SHARED_SYM extern u32 omovlstat;
-extern char omUPauseFlag;
+SHARED_SYM extern char omUPauseFlag;
 SHARED_SYM extern s16 omSysExitReq;
 extern s16 omdispinfo;
 extern u8 omSysPauseEnableFlag;

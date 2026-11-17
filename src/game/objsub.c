@@ -1568,6 +1568,25 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         MP5_MESSID(MP5_MESSDIR_MGINST, 68), // inst_mess[3]
     },
     {
+        // m515 Hotel Goomba (4 player free for all), ported from Mario Party 5's m515 m2c draft.
+        DLL_m515dll, // ovl
+        0, // type
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(515), // name_mess
+        DATADIR_MP5_M515, // data_dir
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 14), // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 14), // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 70), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 71), // inst_mess[1]
+        0, // inst_mess[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 73), // inst_mess[3]
+    },
+    {
         ((u16)DLL_NONE), // ovl
         0, // type
         0, // flag
