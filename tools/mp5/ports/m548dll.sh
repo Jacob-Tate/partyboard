@@ -91,7 +91,7 @@ import os
 if os.environ.get('M548_TWEAK'):
     rep('lbl_1_bss_384[var_r31].unk14 += 20.0f;', 'lbl_1_bss_384[var_r31].unk14 += sDkTw[6];')
     rep('lbl_1_bss_44.x += 12.0f;', 'lbl_1_bss_44.x += sDkTw[7];')
-    rep('lbl_1_bss_44.y += 12.0f;', 'lbl_1_bss_44.y += sDkTw[8];')
+    rep('lbl_1_bss_44.y += 12.0f;', 'lbl_1_bss_44.y += sDkTw[8];\n            lbl_1_bss_44.x += sDkTw[9];')
     rep('temp_r31->unk4 * sDkMotScale[var_r29]);', '(sDkTweak ? 0.0f : temp_r31->unk4 * sDkMotScale[var_r29]));')
     rep('    var_r29 = 0;\nloop_12:', """    {
         static int prevTweak;
