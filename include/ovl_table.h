@@ -182,9 +182,11 @@ DLL(m524Dll)
 DLL(m570Dll)
 DLL(m554Dll)
 DLL(m548Dll)
+DLL(m529Dll)
 #define DLL_m570dll DLL_m570Dll
 #define DLL_m554dll DLL_m554Dll
 #define DLL_m548dll DLL_m548Dll
+#define DLL_m529dll DLL_m529Dll
 #define DLL_modeltestdll DLL_modeltestDll
 #define DLL_messdll DLL_messDll
 #define DLL_mpexdll DLL_mpexDll

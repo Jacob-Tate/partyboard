@@ -1264,6 +1264,44 @@ SHARED_SYM MgInfo mgInfoTbl[] = {
         MP5_MESSID(MP5_MESSDIR_MGINST, 303), // inst_mess[3]
     },
     {
+        // Slot 470 belongs to the other parallel port; this stands in for it (a copy of Head Waiter) until the branches are merged.
+        DLL_m548dll, // ovl
+        6, // type
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(548), // name_mess
+        DATADIR_MP5_M548, // data_dir
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 49), // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 49), // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 300), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 301), // inst_mess[1]
+        0, // inst_mess[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 303), // inst_mess[3]
+    },
+    {
+        // Handy Hoppers, ported from Mario Party 5's m529 m2c draft (2 vs 2).
+        DLL_m529dll, // ovl
+        2, // type
+        0, // flag
+        255, // record_idx
+        MP5_MESS_MGNAME(529), // name_mess
+        DATADIR_MP5_M529, // data_dir
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 30), // inst_pic[0]
+        0, // inst_pic[1]
+        0, // inst_pic[2]
+        DATA_MAKE_NUM(DATADIR_MP5_INSTPIC, 30), // mg_pic[0]
+        0, // mg_pic[1]
+        0, // mg_pic[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 195), // inst_mess[0]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 196), // inst_mess[1]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 197), // inst_mess[2]
+        MP5_MESSID(MP5_MESSDIR_MGINST, 198), // inst_mess[3]
+    },
+    {
         ((u16)DLL_NONE), // ovl
         0, // type
         0, // flag
