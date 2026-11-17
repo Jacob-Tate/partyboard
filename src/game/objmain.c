@@ -42,7 +42,7 @@ SHARED_SYM s32 omovlevtno;
 s32 omnextovlevtno;
 SHARED_SYM u32 omovlstat;
 static s32 omnextovlstat;
-char omUPauseFlag;
+SHARED_SYM char omUPauseFlag;
 SHARED_SYM s16 omSysExitReq;
 s16 omdispinfo;
 

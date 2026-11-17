@@ -419,6 +419,7 @@ EXPORTS
     CharNpcDustVoiceOffSet
     CharModelIdGet
     CharModelItemHookGet
+    CharModelHitCreate
     CharModelHookDustCreate
     CharModelKill
     CharEffectLayerSet
