@@ -327,8 +327,8 @@ def fix_particle_work(body, t):
     return body
 
 
-def fix_particles(name, body):
-    parts = set(re.findall(r'(\w+) = Hu3DData\[[^;\n]*\]\.hookData;', body))
+def fix_particles(name, body, skip=()):
+    parts = set(re.findall(r'(\w+) = Hu3DData\[[^;\n]*\]\.hookData;', body)) - set(skip)  # (`// var` hinted variables are not particles)
     if re.search(r'HU3DPARTICLE \*particleP', body):
         parts.add('particleP')
     if not parts:
@@ -757,13 +757,13 @@ def run(code, asm, types_path, symbols=None):
         if name:
             text = re.sub(r', \? arg_sp0\)', ')', text)
             text = text.replace('(? arg_sp0)', '(void)')
-            text = fix_particles(name, text)
+            text = fix_particles(name, text, hints['vars'].get(name, {}))
             if hints['particlework']:
                 text = fix_particle_work(text, hints['particlework'])
             text = text.replace('f32 (*mtx)[4]', 'Mtx mtx')
             text = fix_objdata(name, text, hints)
             for v, t in hints['vars'].get(name, {}).items():
-                text = re.sub(r'^(    )(?:[\w ]+\*|M2C_UNK|\?|[su]32) ?%s;$' % v, r'\g<1>%s *%s;' % (t, v), text, flags=re.M)
+                text = re.sub(r'^(    )(?:[\w ]+\*+|M2C_UNK|\?|[su]32) ?%s;$' % v, r'\g<1>%s *%s;' % (t, v), text, flags=re.M)
                 text = resolve_fields(text, v, t, hints['layouts'])
             text = fix_struct_arrays(text, hints['layouts'])
             text = element_pointers(text, hints['layouts'])
